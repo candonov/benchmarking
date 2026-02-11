@@ -1,1 +1,294 @@
-test
+# GPU Fine-Tuning Static Node Pool
+
+This directory contains Kubernetes manifests for a static-capacity node pool optimized for fine-tuning workloads on p5.48xlarge instances with On-Demand Capacity Reservations (ODCR).
+
+## Prerequisites
+
+- EKS Auto Mode cluster
+- kubectl configured to access your cluster
+- AWS CLI configured with appropriate permissions
+- On-Demand Capacity Reservation for p5.48xlarge instances (see setup below)
+
+## Create On-Demand Capacity Reservation (ODCR)
+
+To ensure GPU instance availability, create an On-Demand Capacity Reservation:
+
+### Option 1: Using AWS Console
+
+1. Navigate to the EC2 console → Capacity Reservations → Create capacity reservation
+2. Configure the reservation with the following settings:
+   - **Instance type**: `p5.48xlarge` (must match the GPU instance type used in the nodepool)
+   - **Platform**: Linux/UNIX
+   - **Availability Zone**: Select any available zone in your region (must match your EKS cluster subnets)
+   - **Instance count**: 1 (must match the `replicas` value in nodepool.yaml)
+   - **Reservation ends**: Select "Specific time" and set the date to 3 hours from now (or select "Manually" if you want to control when to end the reservation)
+   - **Instance eligibility**: "Open" (allows any account with access to use the reservation)
+3. Click **Create**
+4. Note the Capacity Reservation ID (format: `cr-xxxxxxxxxxxxxxxxx`) for use in the setup steps below
+
+### Option 2: Using AWS CLI
+
+```bash
+# Calculate end date (1 hours from now) - macOS compatible
+END_DATE=$(date -u -v+1H +"%Y-%m-%dT%H:%M:%S.000Z")
+CR_AZ="us-east-2b"
+```
+
+Create the Capacity Reservation
+Note: If the command succeeds it will result in 1h charge for p5.48xl (~$55)
+
+```
+aws ec2 create-capacity-reservation \
+  --instance-type p5.48xlarge \
+  --instance-platform Linux/UNIX \
+  --availability-zone "$CR_AZ" \
+  --instance-count 1 \
+  --instance-match-criteria open \
+  --end-date-type limited \
+  --end-date "$END_DATE"
+```
+
+Expected result, option 1:
+
+```
+An error occurred (InsufficientInstanceCapacity) when calling the CreateCapacityReservation operation (reached max retries: 2): Insufficient capacity.
+```
+
+Change the az and retry.
+
+Note the `CapacityReservationId` from the output.
+
+## Setup Instructions
+
+### 1. Get and Validate Capacity Reservation ID
+
+```bash
+CAPACITY_RESERVATION_ID=$(aws ec2 describe-capacity-reservations \
+  --filters "Name=state,Values=active" "Name=instance-type,Values=p5.48xlarge" \
+  --query 'CapacityReservations[0].CapacityReservationId' \
+  --output text)
+
+echo "Capacity Reservation ID: $CAPACITY_RESERVATION_ID"
+```
+
+### 2. Update the `nodeclass.yaml` with the CapacityReservationId
+
+```bash
+envsubst < nodeclass.yaml
+```
+
+Validate file is updated with capacity reservation:
+
+```
+cat nodeclass.yaml | grep -A 2 "capacityReservationSelectorTerms"
+```
+
+Expected output:
+
+```yaml
+capacityReservationSelectorTerms:
+  - id: cr-xxxxxxxxxxxxxxxxx
+```
+
+### 3. Apply NodeClass
+
+```bash
+kubectl apply -f nodeclass.yaml
+```
+
+### 4. Validate NodeClass Creation
+
+```bash
+kubectl get nodeclass gpu-fine-tuning-with-odcr
+```
+
+Expected output:
+
+```
+NAME                          READY
+gpu-fine-tuning-with-odcr     True
+```
+
+### 5. Apply NodePool
+
+```bash
+kubectl apply -f nodepool.yaml
+```
+
+### 6. Validate NodePool Creation
+
+```bash
+kubectl get nodepool gpu-fine-tuning-static
+```
+
+Expected output:
+
+```
+NAME                      REPLICAS   NODES   READY
+gpu-fine-tuning-static    1          0       True
+```
+
+Note: NODES will show 0 initially, then 1 after the node is provisioned (5-10 minutes).
+
+### 7. Verify Node Provisioning
+
+#### Check NodeClass Status
+
+```bash
+kubectl get nodeclass gpu-fine-tuning-with-odcr -o yaml
+```
+
+Expected output should show:
+
+- `status.conditions` with `Ready: True`
+- `status.subnets` populated with subnet IDs
+- `status.securityGroups` populated with security group IDs
+
+#### Check NodePool Status
+
+```bash
+kubectl get nodepool gpu-fine-tuning-static
+```
+
+Expected output:
+
+```
+NAME                      REPLICAS   NODES   READY
+gpu-fine-tuning-static    1          1       True
+```
+
+#### Verify Node is Running
+
+Wait for the node to be provisioned (may take 5-10 minutes):
+
+```bash
+kubectl get nodes -l workload=fine-tuning -w
+```
+
+Expected output should show 1 node with:
+
+- Status: `Ready`
+- Instance type: `p5.48xlarge`
+- 8 GPUs available
+
+#### Check Node Details
+
+```bash
+kubectl describe node -l workload=fine-tuning
+```
+
+Verify:
+
+- ✅ Taints: `nvidia.com/gpu:NoSchedule`
+- ✅ Labels: `workload=fine-tuning`, `gpu=nvidia-h100`
+- ✅ Capacity: `nvidia.com/gpu: 8`
+- ✅ Allocatable: `nvidia.com/gpu: 8`
+
+### 8. Test with a Sample Pod
+
+Deploy a test pod to verify GPU access:
+
+```bash
+cat << EOF | kubectl apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nvidia-smi
+spec:
+  tolerations:
+  - key: "nvidia.com/gpu"
+    operator: "Exists"
+    effect: "NoSchedule"
+  nodeSelector:
+    workload: fine-tuning
+  containers:
+  - name: nvidia-smi
+    image: public.ecr.aws/amazonlinux/amazonlinux:2023-minimal
+    command: ["nvidia-smi"]
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+  restartPolicy: OnFailure
+EOF
+```
+
+Check the pod logs:
+
+```bash
+kubectl logs nvidia-smi
+```
+
+Expected output should show NVIDIA GPU information for H100 GPUs.
+
+## Configuration Details
+
+### NodeClass: `gpu-fine-tuning-with-odcr`
+
+- Uses On-Demand Capacity Reservation
+- Configured for EKS cluster security groups
+- Tagged for fine-tuning workloads
+
+### NodePool: `gpu-fine-tuning-static`
+
+- **Static capacity**: Maintains exactly 1 p5.48xlarge node
+- **Instance type**: p5.48xlarge (192 vCPUs, 2TB RAM, 8x H100 GPUs)
+- **Capacity type**: On-demand with ODCR
+- **Node limit**: 1 (matches ODCR capacity)
+- **Disruption**: Node replacements will cause brief downtime (no temporary scaling available)
+
+## Scaling
+
+To change the number of static nodes:
+
+```bash
+kubectl scale nodepool gpu-fine-tuning-static --replicas=<desired-count>
+```
+
+Note: Ensure your capacity reservation has sufficient capacity for the desired replica count.
+
+## Troubleshooting
+
+### Node not provisioning
+
+Check NodePool events:
+
+```bash
+kubectl describe nodepool gpu-fine-tuning-static
+```
+
+Common issues:
+
+- Capacity reservation ID is incorrect or inactive
+- Insufficient capacity in the reservation
+- Security group or subnet configuration issues
+
+### Node stuck in NotReady state
+
+Check node conditions:
+
+```bash
+kubectl describe node -l workload=fine-tuning
+```
+
+### Pods not scheduling
+
+Verify:
+
+1. Pod has correct tolerations for `nvidia.com/gpu` taint
+2. Pod has correct nodeSelector: `workload: fine-tuning`
+3. Pod requests GPUs: `nvidia.com/gpu: <count>`
+
+## Cleanup
+
+To remove the node pool and node class:
+
+```bash
+# Delete test pod if still running
+kubectl delete pod nvidia-smi
+
+# Delete NodePool (will drain and terminate nodes)
+kubectl delete nodepool gpu-fine-tuning-static
+
+# Delete NodeClass
+kubectl delete nodeclass gpu-fine-tuning-with-odcr
+```

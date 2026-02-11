@@ -1,0 +1,37 @@
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: gpu-fine-tuning-static
+spec:
+  replicas: 1 # Maintain exactly 1 node (static capacity)
+
+  template:
+    metadata:
+      labels:
+        workload: fine-tuning
+        gpu: nvidia-h100
+    spec:
+      nodeClassRef:
+        group: eks.amazonaws.com
+        kind: NodeClass
+        name: gpu-fine-tuning-with-odcr
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: ["p5.48xlarge"]
+      taints:
+        - key: nvidia.com/gpu
+          effect: NoSchedule
+      startupTaints:
+        - key: node.kubernetes.io/not-ready
+          effect: NoSchedule
+
+  limits:
+    nodes: 1 # Match ODCR capacity (no temporary scaling during replacement)
+
+  disruption:
+    budgets:
+      - nodes: 100% # Allow node replacement (will cause brief downtime)
