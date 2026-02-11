@@ -4,10 +4,37 @@ This directory contains Kubernetes manifests for a static-capacity node pool opt
 
 ## Prerequisites
 
-- EKS Auto Mode cluster
+- eksctl installed (version 0.196.0 or later for Auto Mode support)
 - kubectl configured to access your cluster
 - AWS CLI configured with appropriate permissions
 - On-Demand Capacity Reservation for p5.48xlarge instances (see setup below)
+
+## Create EKS Auto Mode Cluster
+
+Create an EKS cluster with Auto Mode enabled using eksctl:
+
+```bash
+export CLUSTER_NAME=benchmark-test-cluster
+export AWS_REGION=us-west-2
+```
+
+```bash
+eksctl create cluster --name=$CLUSTER_NAME --region=$AWS_REGION --enable-auto-mode
+```
+
+This command takes a few minutes to complete. After completion, eksctl automatically updates your kubeconfig and targets your newly created cluster. To verify that the cluster is operational, use the following:
+
+```
+kubectl get pods --all-namespaces
+```
+
+Sample output:
+
+```
+NAMESPACE     NAME                                  READY   STATUS    RESTARTS   AGE
+kube-system   metrics-server-6d67d68f67-7x4tg       1/1     Running   0          3m
+kube-system   metrics-server-6d67d68f67-l4xv6       1/1     Running   0          3m
+```
 
 ## Create On-Demand Capacity Reservation (ODCR)
 

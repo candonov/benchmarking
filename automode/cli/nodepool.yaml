@@ -34,4 +34,4 @@ spec:
 
   disruption:
     budgets:
-      - nodes: 100% # Allow node replacement (will cause brief downtime)
+      - nodes: "1" # Allow only 1 node to be disrupted at a time
