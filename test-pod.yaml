@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gpu-placeholder
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gpu-placeholder
+  template:
+    metadata:
+      labels:
+        app: gpu-placeholder
+    spec:
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists # Changed from Equal to Exists (no value needed)
+          effect: NoSchedule
+      nodeSelector:
+        workload: fine-tuning # Changed from intent: gpu to match your NodePool labels
+      containers:
+        - name: placeholder
+          image: public.ecr.aws/eks-distro/kubernetes/pause:3.9
+          resources:
+            requests:
+              nvidia.com/gpu: 1
+              vpc.amazonaws.com/efa: 1
+            limits:
+              nvidia.com/gpu: 1
+              vpc.amazonaws.com/efa: 1

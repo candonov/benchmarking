@@ -15,11 +15,36 @@ Create an EKS cluster with Auto Mode enabled using eksctl:
 
 ```bash
 export CLUSTER_NAME=benchmark-test-cluster
-export AWS_REGION=us-west-2
+export AWS_REGION=us-east-1
 ```
 
 ```bash
 eksctl create cluster --name=$CLUSTER_NAME --region=$AWS_REGION --enable-auto-mode
+```
+
+### Install EFA Device Plugin for Auto Mode
+
+Auto Mode supports EFA, but the EFA device plugin must be installed manually:
+
+```bash
+kubectl apply -f efa-device-plugin.yaml
+```
+
+Verify the EFA device plugin is running:
+
+```bash
+kubectl get daemonset -n kube-system aws-efa-k8s-device-plugin-daemonset
+kubectl get pods -n kube-system -l name=aws-efa-k8s-device-plugin
+```
+
+**IMPORTANT**: As of EKS Auto Mode v1.32, EFA network interfaces are NOT automatically attached to P5 instances, even when the `vpc.amazonaws.com/efa: Exists` requirement is specified in the NodePool. The `vpc.amazonaws.com/efa` label appears on nodes, but the actual EFA hardware is missing.
+
+**Current Status**: EFA support in Auto Mode appears incomplete. The workaround is to use Managed Node Groups with `efaEnabled: true` instead of Auto Mode NodePools for EFA workloads.
+
+Verify the `vpc.amazonaws.com/efa` resource is available (this will be empty until EFA is properly configured):
+
+```bash
+kubectl get nodes -o json | jq '.items[].status.capacity | select(.["vpc.amazonaws.com/efa"] != null) | .["vpc.amazonaws.com/efa"]'
 ```
 
 This command takes a few minutes to complete. After completion, eksctl automatically updates your kubeconfig and targets your newly created cluster. To verify that the cluster is operational, use the following:
@@ -58,7 +83,7 @@ To ensure GPU instance availability, create an On-Demand Capacity Reservation:
 ```bash
 # Calculate end date (1 hours from now) - macOS compatible
 END_DATE=$(date -u -v+1H +"%Y-%m-%dT%H:%M:%S.000Z")
-CR_AZ="us-east-2b"
+CR_AZ="us-east-1a"
 ```
 
 Create the Capacity Reservation
@@ -210,6 +235,19 @@ Verify:
 - ✅ Labels: `workload=fine-tuning`, `gpu=nvidia-h100`
 - ✅ Capacity: `nvidia.com/gpu: 8`
 - ✅ Allocatable: `nvidia.com/gpu: 8`
+
+### Install MPI operator
+
+https://github.com/aws-samples/aws-do-eks/tree/main/Container-Root/eks/deployment/kubeflow/mpi-operator
+
+export REGISTRY="public.ecr.aws/hpc-cloud/"
+export IMAGE="efa"
+export TAG=":h100"
+export INSTANCE_TYPE="p5.48xlarge"
+export GPU_PER_INSTANCE="8"
+export GPU_TOTAL="16"
+export EFA_PER_INSTANCE="32"
+export LD_LIBRARY_PATH="/opt/amazon/openmpi/lib:/opt/amazon/efa/lib64:/opt/amazon/efa/lib:/opt/nvidia/nvda_nixl/lib/x86_64-linux-gnu:/opt/nvidia/nvda_nixl/lib/x86_64-linux-gnu/plugins:/usr/local/ucx/lib:/usr/local/ucx/lib/ucx:/usr/local/lib:/usr/local/cuda/compat/lib"
 
 ### 8. Test with a Sample Pod
 

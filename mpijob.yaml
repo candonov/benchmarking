@@ -1,0 +1,85 @@
+apiVersion: kubeflow.org/v2beta1
+kind: MPIJob
+metadata:
+  name: nccl-efa-tests
+spec:
+  runPolicy:
+    cleanPodPolicy: Running
+    backoffLimit: 20
+  slotsPerWorker: 8
+  mpiReplicaSpecs:
+    Launcher:
+      replicas: 1
+      template:
+        spec:
+          tolerations:
+            - key: nvidia.com/gpu
+              effect: NoSchedule
+          nodeSelector:
+            node.kubernetes.io/instance-type: "p5.48xlarge"
+          restartPolicy: OnFailure
+          containers:
+            - image: public.ecr.aws/hpc-cloud/efa:h100
+              imagePullPolicy: Always
+              name: nccl-efa-launcher
+              securityContext:
+                runAsUser: 0
+              env:
+                - name: LD_LIBRARY_PATH
+                  value: "/opt/amazon/openmpi/lib:/opt/amazon/efa/lib64:/opt/amazon/efa/lib:/opt/nvidia/nvda_nixl/lib/x86_64-linux-gnu:/opt/nvidia/nvda_nixl/lib/x86_64-linux-gnu/plugins:/usr/local/ucx/lib:/usr/local/ucx/lib/ucx:/usr/local/lib:/usr/local/cuda/compat/lib"
+              command:
+                - /bin/bash
+                - -c
+              args:
+                - |
+                  set -e
+                  /opt/amazon/openmpi/bin/mpirun                 --allow-run-as-root                 --tag-output                 -np 16                 -N 8                 --bind-to none                 --mca plm_rsh_args "-o StrictHostKeyChecking=no"                 -x PATH                 -x LD_LIBRARY_PATH                 -x FI_PROVIDER=efa                 -x FI_EFA_FORK_SAFE=1                 -x NCCL_DEBUG=INFO                 -x NCCL_BUFFSIZE=8388608                 -x NCCL_P2P_NET_CHUNKSIZE=524288                 --mca pml ^ucx                 --mca btl tcp,self                 --mca btl_tcp_if_exclude lo,docker0,veth_def_agent                 /opt/nccl-tests/all_reduce_perf                 -b 8                 -e 2G                 -f 2                 -g 1                 -c 1                 -n 20
+    Worker:
+      replicas: 2
+      template:
+        spec:
+          tolerations:
+          #           - key: nvidia.com/gpu
+          #            effect: NoSchedule
+          #         nodeSelector:
+          #           node.kubernetes.io/instance-type: "p5.48xlarge"
+          containers:
+            - image: public.ecr.aws/hpc-cloud/efa:h100
+              imagePullPolicy: Always
+              name: nccl-tests-worker
+
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  mkdir -p /run/sshd
+                  /usr/sbin/sshd -D
+              env:
+                - name: FI_PROVIDER
+                  value: "efa"
+                - name: FI_EFA_FORK_SAFE
+                  value: "1"
+                - name: NCCL_DEBUG
+                  value: "INFO"
+              securityContext:
+                capabilities:
+                  add: ["IPC_LOCK"]
+                runAsUser: 0
+              volumeMounts:
+                - name: shmem
+                  mountPath: /dev/shm
+              resources:
+                limits:
+                  nvidia.com/gpu: 8
+                  #                  hugepages-2Mi: 5120Mi
+                  vpc.amazonaws.com/efa: 32
+                #                  memory: 191300Mi
+                requests:
+                  nvidia.com/gpu: 8
+                  #                  hugepages-2Mi: 5120Mi
+                  vpc.amazonaws.com/efa: 32
+                #                  memory: 191300Mi
+          volumes:
+            - name: shmem
+              hostPath:
+                path: /dev/shm
