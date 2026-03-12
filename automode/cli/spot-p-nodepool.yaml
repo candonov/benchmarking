@@ -1,12 +1,10 @@
 apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
-  name: gpu-spot-dynamic
+  name: spotp
 spec:
-  # replicas: 2 # Maintain exactly 2 node (static capacity)
-
   disruption:
-    consolidateAfter: 10m # Terminate nodes 1 minute after they become empty
+    consolidateAfter: 10m # Terminate nodes 10 minutes after they become empty
     consolidationPolicy: WhenEmptyOrUnderutilized # Consolidate underutilized nodes
 
   template:
@@ -27,8 +25,6 @@ spec:
         - key: node.kubernetes.io/instance-type
           operator: In
           values: ["p5.48xlarge"]
-        - key: vpc.amazonaws.com/efa
-          operator: Exists
       taints:
         - key: nvidia.com/gpu
           effect: NoSchedule
@@ -38,4 +34,4 @@ spec:
       terminationGracePeriod: 24h0m0s
 
   limits:
-    nodes: 2 # Maximum of 10 nodes can be provisioned dynamically
+    nodes: 2 # Maximum of 2 nodes can be provisioned dynamically

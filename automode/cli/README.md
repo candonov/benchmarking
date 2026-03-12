@@ -1,13 +1,12 @@
-# GPU Fine-Tuning Static Node Pool
+# GPU Fine-Tuning
 
-This directory contains Kubernetes manifests for a static-capacity node pool optimized for fine-tuning workloads on p5.48xlarge instances with On-Demand Capacity Reservations (ODCR).
+This directory contains Kubernetes manifests for Auto Mode cluster and NodePools optimized for fine-tuning workloads.
 
 ## Prerequisites
 
-- eksctl installed (version 0.196.0 or later for Auto Mode support)
-- kubectl configured to access your cluster
-- AWS CLI configured with appropriate permissions
-- On-Demand Capacity Reservation for p5.48xlarge instances (see setup below)
+- eksctl (use latest version; 0.196.0 or later for Auto Mode support, tested with 0.224.0)
+- kubectl
+- AWS CLI
 
 ## Create EKS Auto Mode Cluster
 
@@ -15,36 +14,11 @@ Create an EKS cluster with Auto Mode enabled using eksctl:
 
 ```bash
 export CLUSTER_NAME=benchmark-test-cluster
-export AWS_REGION=us-east-1
+export AWS_REGION=us-east-2
 ```
 
 ```bash
-eksctl create cluster --name=$CLUSTER_NAME --region=$AWS_REGION --enable-auto-mode
-```
-
-### Install EFA Device Plugin for Auto Mode
-
-Auto Mode supports EFA, but the EFA device plugin must be installed manually:
-
-```bash
-kubectl apply -f efa-device-plugin.yaml
-```
-
-Verify the EFA device plugin is running:
-
-```bash
-kubectl get daemonset -n kube-system aws-efa-k8s-device-plugin-daemonset
-kubectl get pods -n kube-system -l name=aws-efa-k8s-device-plugin
-```
-
-**IMPORTANT**: As of EKS Auto Mode v1.32, EFA network interfaces are NOT automatically attached to P5 instances, even when the `vpc.amazonaws.com/efa: Exists` requirement is specified in the NodePool. The `vpc.amazonaws.com/efa` label appears on nodes, but the actual EFA hardware is missing.
-
-**Current Status**: EFA support in Auto Mode appears incomplete. The workaround is to use Managed Node Groups with `efaEnabled: true` instead of Auto Mode NodePools for EFA workloads.
-
-Verify the `vpc.amazonaws.com/efa` resource is available (this will be empty until EFA is properly configured):
-
-```bash
-kubectl get nodes -o json | jq '.items[].status.capacity | select(.["vpc.amazonaws.com/efa"] != null) | .["vpc.amazonaws.com/efa"]'
+eksctl create cluster --name=$CLUSTER_NAME --region=$AWS_REGION --enable-auto-mode  --version=1.33
 ```
 
 This command takes a few minutes to complete. After completion, eksctl automatically updates your kubeconfig and targets your newly created cluster. To verify that the cluster is operational, use the following:
@@ -59,6 +33,117 @@ Sample output:
 NAMESPACE     NAME                                  READY   STATUS    RESTARTS   AGE
 kube-system   metrics-server-6d67d68f67-7x4tg       1/1     Running   0          3m
 kube-system   metrics-server-6d67d68f67-l4xv6       1/1     Running   0          3m
+```
+
+## Create Spot H100 NodePool with Default NodeClass
+
+```
+kubectl apply -f automode/cli/spot-p-nodepool.yaml
+```
+
+This command creates a dynamic Spot NodePool using the default NodeClass that starts with 0 instances and scales up only when a workload is scheduled. The NodePool is configured to scale down to 0 when idle and up to a maximum of 2 Spot p5.48xlarge instances.
+
+Validate NodePools is created:
+
+```
+kubectl get nodepools gpu-spot-p
+```
+
+Expected output:
+
+```
+NAME        NODECLASS   NODES   READY   AGE
+gpu-spot-p  default     0       True    15s
+```
+
+### Test with a Sample Pod
+
+Deploy a test pod to verify the Auto Mode will lauch a GPU:
+
+```bash
+cat << EOF | kubectl apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nvidia-smi
+spec:
+  tolerations:
+  - key: "nvidia.com/gpu"
+    operator: "Exists"
+    effect: "NoSchedule"
+  containers:
+  - name: nvidia-smi
+    image: public.ecr.aws/amazonlinux/amazonlinux:2023-minimal
+    command: ["nvidia-smi"]
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+        vpc.amazonaws.com/efa: 32 # nessesary for the instance to come up with EFA
+  restartPolicy: OnFailure
+EOF
+```
+
+Check the pod logs:
+
+```bash
+kubectl logs nvidia-smi
+```
+
+## Install MPI Operator
+
+MPI Operator is an open-source Kubernetes controller from Kubeflow that manages distributed MPI jobs by automating worker pod creation, SSH setup, and `mpirun` orchestration across nodes. To validate multi-instance EFA networking, we need to run a distributed NCCL test (like `all_reduce_perf`) across multiple GPU nodes, which requires MPI to coordinate the communication between workers, and the MPI Operator handles that orchestration on Kubernetes.
+
+> [!NOTE]
+> There is no official Helm chart for MPI Operator, only community-maintained (outdated) charts. Kubeflow recommends `kubectl apply`. See the [MPI Operator GitHub repo](https://github.com/kubeflow/mpi-operator) for details.
+
+#### kubectl apply ([official instructions](https://github.com/kubeflow/mpi-operator), recommended)
+
+Install the latest release (v0.8.0) directly from the Kubeflow repo:
+
+```bash
+kubectl apply --server-side -f https://raw.githubusercontent.com/kubeflow/mpi-operator/v0.8.0/deploy/v2beta1/mpi-operator.yaml
+```
+
+This installs the operator and the `MPIJob` CRD (`mpijobs.kubeflow.org`) used to run distributed MPI workloads on Kubernetes.
+
+#### Verify installation
+
+Validate `mpi` pod is Running (it might take 30-40s for the pod to be in Running state)
+
+```bash
+kubectl get pods -n mpi-operator
+```
+
+Expected output:
+
+```
+NAME                            READY   STATUS    RESTARTS   AGE
+mpi-operator-85f8599757-wz2gp   1/1     Running   0          41s
+```
+
+Validate `mpi` CRD was created
+
+```
+kubectl get crd | grep mpi
+```
+
+Expected output:
+
+```
+mpijobs.kubeflow.org
+```
+
+### MPI Job
+
+```
+export REGISTRY="public.ecr.aws/hpc-cloud/"
+export IMAGE="efa"
+export TAG=":h100"
+export INSTANCE_TYPE="p5.48xlarge"
+export GPU_PER_INSTANCE="8"
+export GPU_TOTAL="16"
+export EFA_PER_INSTANCE="32"
+export LD_LIBRARY_PATH="/opt/amazon/openmpi/lib:/opt/amazon/efa/lib64:/opt/amazon/efa/lib:/opt/nvidia/nvda_nixl/lib/x86_64-linux-gnu:/opt/nvidia/nvda_nixl/lib/x86_64-linux-gnu/plugins:/usr/local/ucx/lib:/usr/local/ucx/lib/ucx:/usr/local/lib:/usr/local/cuda/compat/lib"
 ```
 
 ## Create On-Demand Capacity Reservation (ODCR)
@@ -236,70 +321,30 @@ Verify:
 - ✅ Capacity: `nvidia.com/gpu: 8`
 - ✅ Allocatable: `nvidia.com/gpu: 8`
 
-### Install MPI operator
+### Pods not scheduling
 
-https://github.com/aws-samples/aws-do-eks/tree/main/Container-Root/eks/deployment/kubeflow/mpi-operator
+Verify:
 
-export REGISTRY="public.ecr.aws/hpc-cloud/"
-export IMAGE="efa"
-export TAG=":h100"
-export INSTANCE_TYPE="p5.48xlarge"
-export GPU_PER_INSTANCE="8"
-export GPU_TOTAL="16"
-export EFA_PER_INSTANCE="32"
-export LD_LIBRARY_PATH="/opt/amazon/openmpi/lib:/opt/amazon/efa/lib64:/opt/amazon/efa/lib:/opt/nvidia/nvda_nixl/lib/x86_64-linux-gnu:/opt/nvidia/nvda_nixl/lib/x86_64-linux-gnu/plugins:/usr/local/ucx/lib:/usr/local/ucx/lib/ucx:/usr/local/lib:/usr/local/cuda/compat/lib"
+1. Pod has correct tolerations for `nvidia.com/gpu` taint
+2. Pod has correct nodeSelector: `workload: fine-tuning`
+3. Pod requests GPUs: `nvidia.com/gpu: <count>`
 
-### 8. Test with a Sample Pod
+## Cleanup
 
-Deploy a test pod to verify GPU access:
+To remove the node pool and node class:
 
 ```bash
-cat << EOF | kubectl apply -f -
-apiVersion: v1
-kind: Pod
-metadata:
-  name: nvidia-smi
-spec:
-  tolerations:
-  - key: "nvidia.com/gpu"
-    operator: "Exists"
-    effect: "NoSchedule"
-  nodeSelector:
-    workload: fine-tuning
-  containers:
-  - name: nvidia-smi
-    image: public.ecr.aws/amazonlinux/amazonlinux:2023-minimal
-    command: ["nvidia-smi"]
-    resources:
-      limits:
-        nvidia.com/gpu: 1
-  restartPolicy: OnFailure
-EOF
+# Delete test pod if still running
+kubectl delete pod nvidia-smi
+
+# Delete NodePool (will drain and terminate nodes)
+kubectl delete nodepool gpu-fine-tuning-static
+
+# Delete NodeClass
+kubectl delete nodeclass gpu-fine-tuning-with-odcr
 ```
 
-Check the pod logs:
-
-```bash
-kubectl logs nvidia-smi
-```
-
-Expected output should show NVIDIA GPU information for H100 GPUs.
-
-## Configuration Details
-
-### NodeClass: `gpu-fine-tuning-with-odcr`
-
-- Uses On-Demand Capacity Reservation
-- Configured for EKS cluster security groups
-- Tagged for fine-tuning workloads
-
-### NodePool: `gpu-fine-tuning-static`
-
-- **Static capacity**: Maintains exactly 1 p5.48xlarge node
-- **Instance type**: p5.48xlarge (192 vCPUs, 2TB RAM, 8x H100 GPUs)
-- **Capacity type**: On-demand with ODCR
-- **Node limit**: 1 (matches ODCR capacity)
-- **Disruption**: Node replacements will cause brief downtime (no temporary scaling available)
+![alt text](image.png)
 
 ## Scaling
 
@@ -333,27 +378,4 @@ Check node conditions:
 
 ```bash
 kubectl describe node -l workload=fine-tuning
-```
-
-### Pods not scheduling
-
-Verify:
-
-1. Pod has correct tolerations for `nvidia.com/gpu` taint
-2. Pod has correct nodeSelector: `workload: fine-tuning`
-3. Pod requests GPUs: `nvidia.com/gpu: <count>`
-
-## Cleanup
-
-To remove the node pool and node class:
-
-```bash
-# Delete test pod if still running
-kubectl delete pod nvidia-smi
-
-# Delete NodePool (will drain and terminate nodes)
-kubectl delete nodepool gpu-fine-tuning-static
-
-# Delete NodeClass
-kubectl delete nodeclass gpu-fine-tuning-with-odcr
 ```
