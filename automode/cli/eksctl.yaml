@@ -1,0 +1,17 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: ${CLUSTER_NAME}
+  region: ${AWS_REGION}
+
+availabilityZones:
+${EKS_CP_AZS}
+
+autoModeConfig:
+  enabled: true
+
+addons:
+  - name: aws-fsx-csi-driver
+    version: latest
+    useDefaultPodIdentityAssociations: true

@@ -14,11 +14,29 @@ Create an EKS cluster with Auto Mode enabled using eksctl:
 
 ```bash
 export CLUSTER_NAME=benchmark-test-cluster
-export AWS_REGION=us-east-2
+export AWS_REGION=us-east-1
 ```
 
+If you want to utilize spot instance, you should create the cluster in all available azs. Get all available AZs in your selected region:
+
+```
+export EKS_CP_AZS=$(aws ec2 describe-availability-zones \
+      --region ${AWS_REGION} \
+      --filters "Name=opt-in-status,Values=opt-in-not-required" \
+      --query "AvailabilityZones[?ZoneId!='use1-az3'].[ZoneName]" \
+      --output text | sed 's/ /, /g; s/^/  - /')
+```
+
+Create the cluster from `eksctl.yaml` configuration:
+
+```
+eksctl create cluster -f <(envsubst < eksctl.yaml)
+```
+
+To be deleted, this is a simple command that will create cluster in 2 AZs no fsx csi driver.
+
 ```bash
-eksctl create cluster --name=$CLUSTER_NAME --region=$AWS_REGION --enable-auto-mode  --version=1.33
+eksctl create cluster --name=$CLUSTER_NAME --region=$AWS_REGION --enable-auto-mode
 ```
 
 This command takes a few minutes to complete. After completion, eksctl automatically updates your kubeconfig and targets your newly created cluster. To verify that the cluster is operational, use the following:
@@ -46,19 +64,19 @@ This command creates a dynamic Spot NodePool using the default NodeClass that st
 Validate NodePools is created:
 
 ```
-kubectl get nodepools gpu-spot-p
+kubectl get nodepools spot-p
 ```
 
 Expected output:
 
 ```
 NAME        NODECLASS   NODES   READY   AGE
-gpu-spot-p  default     0       True    15s
+spot-p      default     0       True    15s
 ```
 
 ### Test with a Sample Pod
 
-Deploy a test pod to verify the Auto Mode will lauch a GPU:
+`nvidia-smi` (NVIDIA System Management Interface) is a standard diagnostic tool used across the industry to verify GPU availability, driver versions, and device health. Deploy a test pod requesting a single GPU to confirm that Auto Mode provisions a GPU node and the NVIDIA device plugin exposes GPUs to the container runtime
 
 ```bash
 cat << EOF | kubectl apply -f -
@@ -78,11 +96,24 @@ spec:
     resources:
       limits:
         nvidia.com/gpu: 1
-        vpc.amazonaws.com/efa: 32 # nessesary for the instance to come up with EFA
+        vpc.amazonaws.com/efa: 32
   restartPolicy: OnFailure
 EOF
 ```
 
+Check if getting ICEd:
+
+```
+kubectl get events | grep InsufficientCapacityError
+```
+
+If you get:
+
+```
+3m7s        Warning   InsufficientCapacityError        nodeclaim/spot-p-d8rwv     NodeClaim spot-p-d8rwv event: creating nodeclaim, creating instance, insufficient capacity, with fleet error(s), UnfulfillableCapacity: Unable to fulfill capacity due to your request configuration. Please adjust your request and try again. (aws-error-code=UnfulfillableCapacity, aws-operation-name=CreateFleet, aws-request-id=49c1...
+```
+
+Means you are getting ICEd.
 Check the pod logs:
 
 ```bash
@@ -133,7 +164,11 @@ Expected output:
 mpijobs.kubeflow.org
 ```
 
-### MPI Job
+## Run MPI Job
+
+```
+kubectl apply -f mpijob.yaml
+```
 
 ```
 export REGISTRY="public.ecr.aws/hpc-cloud/"

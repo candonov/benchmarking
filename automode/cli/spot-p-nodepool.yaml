@@ -1,7 +1,7 @@
 apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
-  name: spotp
+  name: spot-p
 spec:
   disruption:
     consolidateAfter: 10m # Terminate nodes 10 minutes after they become empty
@@ -28,10 +28,6 @@ spec:
       taints:
         - key: nvidia.com/gpu
           effect: NoSchedule
-      startupTaints:
-        - key: node.kubernetes.io/not-ready
-          effect: NoSchedule
-      terminationGracePeriod: 24h0m0s
 
   limits:
     nodes: 2 # Maximum of 2 nodes can be provisioned dynamically
