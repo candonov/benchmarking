@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: fsx-lustre-pv
+spec:
+  capacity:
+    storage: 38400Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteMany
+  mountOptions:
+    - flock
+  persistentVolumeReclaimPolicy: Retain
+  csi:
+    driver: fsx.csi.aws.com
+    volumeHandle: fs-009fd4a910e34591b
+    volumeAttributes:
+      dnsname: fs-009fd4a910e34591b.fsx.us-east-2.amazonaws.com
+      mountname: iatcdb4v
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: fsx-lustre-claim
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  resources:
+    requests:
+      storage: 38400Gi
+  volumeName: fsx-lustre-pv

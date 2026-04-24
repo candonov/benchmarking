@@ -12,11 +12,6 @@ spec:
       replicas: 1
       template:
         spec:
-          tolerations:
-            - key: nvidia.com/gpu
-              effect: NoSchedule
-          nodeSelector:
-            node.kubernetes.io/instance-type: "p5.48xlarge"
           restartPolicy: OnFailure
           containers:
             - image: public.ecr.aws/hpc-cloud/efa:h100
@@ -39,10 +34,10 @@ spec:
       template:
         spec:
           tolerations:
-          #           - key: nvidia.com/gpu
-          #            effect: NoSchedule
-          #         nodeSelector:
-          #           node.kubernetes.io/instance-type: "p5.48xlarge"
+            - key: nvidia.com/gpu
+              effect: NoSchedule
+          nodeSelector:
+            node.kubernetes.io/instance-type: "p5.48xlarge"
           containers:
             - image: public.ecr.aws/hpc-cloud/efa:h100
               imagePullPolicy: Always

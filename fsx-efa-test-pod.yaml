@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fsx-efa-test
+spec:
+  nodeSelector:
+    karpenter.sh/nodepool: p5en-efa
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+      effect: NoSchedule
+  containers:
+    - name: benchmark
+      image: amazonlinux:2023
+      command:
+        - /bin/bash
+        - -c
+        - |
+          yum install -y fio
+          sleep infinity
+      resources:
+        requests:
+          vpc.amazonaws.com/efa: 1
+        limits:
+          vpc.amazonaws.com/efa: 1
+      volumeMounts:
+        - name: fsx
+          mountPath: /data
+  volumes:
+    - name: fsx
+      persistentVolumeClaim:
+        claimName: fsx-lustre-claim

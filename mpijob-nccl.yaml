@@ -1,0 +1,106 @@
+apiVersion: kubeflow.org/v2beta1
+kind: MPIJob
+metadata:
+  name: nccl-tests
+spec:
+  runPolicy:
+    cleanPodPolicy: Running
+    backoffLimit: 20
+  slotsPerWorker: 8
+  mpiReplicaSpecs:
+    Launcher:
+      replicas: 1
+      restartPolicy: OnFailure
+      template:
+        metadata:
+          labels:
+            mpi/name: test
+        spec:
+          containers:
+            - image: public.ecr.aws/hpc-cloud/nccl-tests:latest
+              imagePullPolicy: IfNotPresent
+              name: test-nccl-launcher
+              command:
+                - /opt/amazon/openmpi/bin/mpirun
+                - --allow-run-as-root
+                - --tag-output
+                - -np
+                - "16"
+                - -N
+                - "8"
+                - --bind-to
+                - none
+                - -x
+                - PATH
+                - -x
+                - LD_LIBRARY_PATH
+                - -x
+                - NCCL_DEBUG=INFO
+                - --mca
+                - pml
+                - ^ucx
+                - --mca
+                - btl
+                - tcp,self
+                - --mca
+                - btl_tcp_if_exclude
+                - lo,docker0,veth_def_agent
+                - /opt/nccl-tests/build/all_reduce_perf
+                - -b
+                - "8"
+                - -e
+                - "16G"
+                - -f
+                - "2"
+                - -c
+                - "1"
+                - -g
+                - "1"
+                - -n
+                - "100"
+                - -w
+                - "10"
+    Worker:
+      replicas: 2
+      template:
+        metadata:
+          labels:
+            mpi/name: test
+        spec:
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: topology.kubernetes.io/zone
+                  labelSelector:
+                    matchLabels:
+                      mpi/name: test
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      mpi/name: test
+                  topologyKey: "kubernetes.io/hostname"
+          nodeSelector:
+            node.kubernetes.io/instance-type: "p5.48xlarge"
+          tolerations:
+            - key: "nvidia.com/gpu"
+              operator: "Exists"
+              effect: "NoSchedule"
+          containers:
+            - image: public.ecr.aws/hpc-cloud/nccl-tests:latest
+              imagePullPolicy: IfNotPresent
+              name: nccl-tests-worker
+              volumeMounts:
+                - name: shmem
+                  mountPath: /dev/shm
+              resources:
+                limits:
+                  nvidia.com/gpu: 8
+                  vpc.amazonaws.com/efa: 32
+                requests:
+                  nvidia.com/gpu: 8
+                  vpc.amazonaws.com/efa: 32
+          volumes:
+            - name: shmem
+              hostPath:
+                path: /dev/shm
