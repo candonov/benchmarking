@@ -1,0 +1,40 @@
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: p5-efa
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        node-type: gpu-p5
+        amiFamily: al2023
+    spec:
+      expireAfter: 720h
+      terminationGracePeriod: 48h
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: p5-efa
+      requirements:
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values:
+            - p5.48xlarge
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values:
+            - spot
+        - key: topology.kubernetes.io/zone
+          operator: In
+          values:
+            - us-east-2a
+      taints:
+        - key: nvidia.com/gpu
+          effect: NoSchedule
+  limits:
+    nodes: 1
+  disruption:
+    consolidateAfter: Never
+    budgets:
+      - nodes: "10%"

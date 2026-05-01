@@ -13,10 +13,10 @@ spec:
   persistentVolumeReclaimPolicy: Retain
   csi:
     driver: fsx.csi.aws.com
-    volumeHandle: fs-009fd4a910e34591b
+    volumeHandle: fs-03f3d6155b46a74f5
     volumeAttributes:
-      dnsname: fs-009fd4a910e34591b.fsx.us-east-2.amazonaws.com
-      mountname: iatcdb4v
+      dnsname: fs-03f3d6155b46a74f5.fsx.us-east-2.amazonaws.com
+      mountname: ipkchb4v
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -28,5 +28,5 @@ spec:
   storageClassName: ""
   resources:
     requests:
-      storage: 38400Gi
+      storage: 76800Gi
   volumeName: fsx-lustre-pv
