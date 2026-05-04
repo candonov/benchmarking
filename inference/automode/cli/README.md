@@ -23,12 +23,12 @@ By default, eksctl creates a cluster in 2 AZs. Using all available AZs improves 
 ```bash
 export AZS=$(aws ec2 describe-availability-zones \
   --region ${AWS_REGION} \
-  --query "AvailabilityZones[?ZoneId!='use1-az3'].ZoneName" \
+  --query "AvailabilityZones[?ZoneId!='use1-az3' && ZoneId!='usw1-az2' && ZoneId!='cac1-az3'].ZoneName" \
   --output text | tr '\t' ',')
 echo $AZS
 ```
 
-> **Note:** The `use1-az3` Availability Zone is excluded because [Amazon EKS does not support control plane placement in that zone](https://repost.aws/knowledge-center/eks-cluster-creation-errors). Creating a cluster with subnets in `use1-az3` results in an `UnsupportedAvailabilityZoneException`.
+> **Note:** The Availability Zones `use1-az3`, `usw1-az2`, and `cac1-az3` are excluded because [Amazon EKS does not support control plane placement in those zones](https://repost.aws/knowledge-center/eks-cluster-creation-errors). Creating a cluster with subnets in any of these zones results in an `UnsupportedAvailabilityZoneException`.
 
 Expected output:
 
@@ -55,14 +55,14 @@ kubectl get pods --all-namespaces
 Sample output:
 
 ```
-NAMESPACE     NAME                                  READY   STATUS    RESTARTS   AGE
-kube-system   metrics-server-6d67d68f67-7x4tg       1/1     Running   0          3m
-kube-system   metrics-server-6d67d68f67-l4xv6       1/1     Running   0          3m
+NAMESPACE     NAME                              READY   STATUS    RESTARTS   AGE
+kube-system   metrics-server-55cf976ddd-cz2mw   1/1     Running   0          3m
+kube-system   metrics-server-55cf976ddd-wrjvv   1/1     Running   0          3m
 ```
 
 ## Create GPU NodePool for Inference
 
-Deploy a GPU NodePool tailored to run inference workloads. This NodePool targets GPU instances in the `g` category with generation greater than 4 (such as G5 and G6e), which offer NVIDIA GPUs well-suited for inference. The taint ensures only GPU-eligible pods are scheduled on these nodes, maintaining efficient resource isolation. Allowing both On-Demand and Spot capacity types gives EKS Auto Mode the flexibility to optimize for cost while maintaining performance.
+Deploy a GPU NodePool for inference workloads. Creating the following dynamic NodePool does not launch any instances. It defines a template that Karpenter uses to provision GPU nodes on demand when a matching pod is scheduled. This NodePool targets GPU instances in the `g` category with generation greater than 4 (such as G5 and G6e), which offer NVIDIA GPUs suitable for serving a range of model sizes. The taint ensures only GPU-eligible pods are scheduled on these nodes. Including both On-Demand and Spot lets Karpenter pick the most cost-effective option with available capacity.
 
 ```bash
 cat << 'EOF' | kubectl apply -f -
@@ -122,7 +122,7 @@ The `gpu-inf-dynamic` NodePool starts with zero nodes. Karpenter will automatica
 
 ### Test with a Sample Pod
 
-Deploy a test pod requesting a single GPU to confirm that Auto Mode provisions a GPU node and the NVIDIA device plugin exposes GPUs to the container runtime:
+We will test with a sample pod requesting a single GPU using `nvidia-smi` (NVIDIA System Management Interface), a standard diagnostic tool used to verify GPU availability, driver versions, and device health. When we deploy the following sample pod, Auto Mode will provision a GPU node and the NVIDIA device plugin will expose GPUs to the container runtime:
 
 ```bash
 cat << EOF | kubectl apply -f -
@@ -130,6 +130,8 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: nvidia-smi
+  labels:
+    guide: eks-docs-inf
 spec:
   tolerations:
   - key: "nvidia.com/gpu"
@@ -146,25 +148,7 @@ spec:
 EOF
 ```
 
-Check for Insufficient Capacity Error (ICE). An ICE occurs when the requested instance type is temporarily unavailable in the targeted Availability Zone. GPU instances may experience this depending on regional and zonal capacity:
-
-```bash
-kubectl get events | grep InsufficientCapacityError
-```
-
-If you see an ICE, the output will look similar to:
-
-```
-3m7s   Warning   InsufficientCapacityError   nodeclaim/gpu-inference-xxxxx   Unable to fulfill capacity due to your request configuration. Please adjust your request and try again.
-```
-
-This means the requested GPU instance type is not currently available in the selected AZ. Karpenter will automatically retry across available AZs.
-
-When Karpenter receives an ICE, it caches that specific offering (instance type + AZ + capacity type) as unavailable for 3 minutes, then retries. Other offerings remain eligible, so widening the set of allowed instance types and AZs in your NodePool increases the chances of landing capacity.
-
-> **Note:** Spot instances launched by Karpenter will not appear in the EC2 Spot Requests console. Karpenter uses the EC2 `CreateFleet` API with `type: instant`, which provisions instances synchronously without creating a Spot Request object. The instances appear in the normal EC2 Instances console with a `spot` lifecycle.
-
-If capacity is available, verify the node is provisioning by checking the NodeClaim, NodePool, and nodes:
+Verify the node is provisioning by checking the NodeClaim, NodePool, and nodes:
 
 ```bash
 kubectl get nodeclaims
@@ -173,8 +157,8 @@ kubectl get nodeclaims
 Expected output:
 
 ```
-NAME                    TYPE         CAPACITY    ZONE          NODE                  READY   AGE
-gpu-inf-dynamic-xxxxx   g6e.xlarge   spot        us-east-2b    i-0xxxxxxxxxxxx       True    2m
+NAME                    TYPE          CAPACITY    ZONE         NODE                  READY   AGE
+gpu-inf-dynamic-xxxxx   g7e.2xlarge   spot        us-east-2b   i-0xxxxxxxxxxxx       True    2m
 ```
 
 ```bash
@@ -198,6 +182,22 @@ Expected output should show a GPU node with the Bottlerocket Nvidia AMI:
 NAME              STATUS   ROLES    AGE   VERSION   INTERNAL-IP    EXTERNAL-IP   OS-IMAGE                                                           CONTAINER-RUNTIME
 i-0xxxxxxxxxxxx   Ready    <none>   2m    v1.32     10.0.x.x       <none>        Bottlerocket (EKS Auto, Nvidia) 2025.x.x (aws-k8s-1.32-nvidia)     containerd://x.x.x
 ```
+
+If no node appears, check for Insufficient Capacity Errors (ICE). An ICE occurs when the requested instance type is temporarily unavailable in the targeted Availability Zone:
+
+```bash
+kubectl get events | grep InsufficientCapacityError
+```
+
+If you see an ICE, the output will look similar to:
+
+```
+3m7s   Warning   InsufficientCapacityError   nodeclaim/gpu-inf-dynamic-xxxxx   Unable to fulfill capacity due to your request configuration. Please adjust your request and try again.
+```
+
+Karpenter will automatically retry across available AZs. When it receives an ICE, it caches that specific offering (instance type + AZ + capacity type) as unavailable for 3 minutes, then retries. Other offerings remain eligible, so widening the set of allowed instance types and AZs in your NodePool increases the chances of landing capacity.
+
+> **Note:** Spot instances launched by Karpenter will not appear in the EC2 Spot Requests console. Karpenter uses the EC2 `CreateFleet` API with `type: instant`, which provisions instances synchronously without creating a Spot Request object. The instances appear in the normal EC2 Instances console with a `spot` lifecycle.
 
 Check the pod logs:
 
