@@ -46,7 +46,7 @@ eksctl create cluster \
   --zones=$AZS
 ```
 
-This command takes a few minutes to complete. After completion, eksctl automatically updates your kubeconfig and targets your newly created cluster. To verify that the cluster is operational:
+This command takes a few minutes to complete. After completion, eksctl automatically updates your kubeconfig and points your newly created cluster. To verify that the cluster is operational:
 
 ```bash
 kubectl get pods --all-namespaces
@@ -269,41 +269,39 @@ If you see `Unable to fulfill capacity due to your request configuration`, Karpe
 
 In this section we will create an On-Demand Capacity Reservation (ODCR) for one GPU instance and set up an additional static NodeClass and NodePool to utilize it. The static NodePool provisions the instance immediately, so the scheduler naturally places pods there first since it already exists. If the static node is full, additional pods go Pending and Karpenter provisions nodes from the dynamic `gpu-inf-dynamic` NodePool as overflow. We will add a soft node affinity (`preferredDuringSchedulingIgnoredDuringExecution`) with the `capacity: odcr` label to explicitly prefer the static node first, in case nodes from both the static and dynamic NodePools are running simultaneously.
 
-### Create the Capacity Reservation
+### Create the Capacity Reservation, NodeClass, and NodePool
 
 ```bash
-# Calculate end date (1 hour from now) - macOS compatible
-END_DATE=$(date -u -v+1H +"%Y-%m-%dT%H:%M:%S.000Z")
 CR_AZ="us-east-2a"
+INSTANCE_TYPE="g6e.2xlarge"
 ```
 
-> **Note**: If the command succeeds it will result in a charge for the reserved instance type for the duration of the reservation.
+> **Note**: If the command succeeds it will result in a charge for the reserved instance type until you manually cancel it with `aws ec2 cancel-capacity-reservation --capacity-reservation-id <id>`.
 
 ```bash
 aws ec2 create-capacity-reservation \
-  --instance-type g6e.2xlarge \
+  --instance-type $INSTANCE_TYPE \
   --instance-platform Linux/UNIX \
   --availability-zone "$CR_AZ" \
   --instance-count 1 \
   --instance-match-criteria open \
-  --end-date-type limited \
-  --end-date "$END_DATE"
+  --end-date-type unlimited
 ```
 
 If you get an `InsufficientInstanceCapacity` error, change the AZ and retry.
 
-### Get and Validate Capacity Reservation ID
+Get and validate the Capacity Reservation ID:
 
 ```bash
 CAPACITY_RESERVATION_ID=$(aws ec2 describe-capacity-reservations \
-  --filters "Name=state,Values=active" "Name=instance-type,Values=g6e.2xlarge" \
+  --filters "Name=state,Values=active" "Name=instance-type,Values=$INSTANCE_TYPE" \
   --query 'CapacityReservations[0].CapacityReservationId' \
   --output text)
 
 echo "Capacity Reservation ID: $CAPACITY_RESERVATION_ID"
 ```
 
-### Apply NodeClass with Capacity Reservation
+Capacity reservation bindings are configured at the NodeClass level, and the `default` NodeClass is immutable, so we need to create a custom NodeClass. Without an ODCR, you could use the `default` NodeClass directly with a static `replicas` NodePool. Apply a NodeClass that references the Capacity Reservation:
 
 ```bash
 cat << EOF | kubectl apply -f -
@@ -312,14 +310,12 @@ kind: NodeClass
 metadata:
   name: gpu-inf-static
 spec:
-  ephemeralStorage:
-    size: "200Gi"
   capacityReservationSelectorTerms:
     - id: "$CAPACITY_RESERVATION_ID"
 EOF
 ```
 
-Validate:
+Validate the NodeClass was created successfully:
 
 ```bash
 kubectl get nodeclass gpu-inf-static
@@ -332,9 +328,7 @@ NAME              READY
 gpu-inf-static    True
 ```
 
-### Apply Static ODCR NodePool
-
-This NodePool provisions a node immediately using the capacity reservation. It uses `replicas: 1` to keep one node running at all times.
+Apply the static NodePool that uses the ODCR-backed NodeClass:
 
 ```bash
 cat << 'EOF' | kubectl apply -f -
@@ -347,7 +341,6 @@ spec:
   template:
     metadata:
       labels:
-        workload: inference
         capacity: odcr
         guide: eks-docs-inf
     spec:
@@ -356,7 +349,7 @@ spec:
       requirements:
         - key: "node.kubernetes.io/instance-type"
           operator: In
-          values: ["g6e.2xlarge"]
+          values: ["g6e.2xlarge"]  # Must match $INSTANCE_TYPE
         - key: "eks.amazonaws.com/capacity-type"
           operator: In
           values: ["on-demand"]
@@ -366,7 +359,9 @@ spec:
 EOF
 ```
 
-### Validate NodePool and Node Provisioning
+This NodePool provisions a node immediately using the capacity reservation. It uses `replicas: 1` to keep one node running at all times.
+
+Validate the NodePool and node provisioning:
 
 ```bash
 kubectl get nodepools
@@ -378,7 +373,7 @@ Expected output:
 NAME              NODECLASS        NODES   READY   AGE
 general-purpose   default          0       True    20m
 gpu-inf-dynamic   default          0       True    10m
-gpu-inf-static    gpu-inf-static   0       True    8s
+gpu-inf-static    gpu-inf-static   1       True    8s
 system            default          2       True    20m
 ```
 
@@ -402,7 +397,7 @@ Both NodePools use the same `nvidia.com/gpu` taint. A pod that tolerates this ta
 1. The ODCR node is already running → scheduler places the pod there first
 2. If the ODCR node is full, the pod goes Pending → Karpenter provisions a Spot/On-Demand node from the `gpu-inf-dynamic` NodePool
 
-No affinity rules are needed. The scheduler naturally prefers existing nodes over triggering new provisioning.
+To explicitly prefer the static node, add a soft node affinity to your pod spec using the `capacity: odcr` label from the static NodePool.
 
 ## Cleanup
 
@@ -418,6 +413,9 @@ kubectl delete nodepool gpu-inf-static
 
 # Delete ODCR NodeClass
 kubectl delete nodeclass gpu-inf-static
+
+# Cancel the Capacity Reservation
+aws ec2 cancel-capacity-reservation --capacity-reservation-id $CAPACITY_RESERVATION_ID
 
 # Delete the cluster
 eksctl delete cluster --name=$CLUSTER_NAME --region=$AWS_REGION
