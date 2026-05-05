@@ -62,7 +62,7 @@ kube-system   metrics-server-55cf976ddd-wrjvv   1/1     Running   0          3m
 
 ## Create GPU NodePool for Inference
 
-Deploy a GPU NodePool for inference workloads. Creating the following dynamic NodePool does not launch any instances. It defines a template that Karpenter uses to provision GPU nodes on demand when a matching pod is scheduled. This NodePool targets GPU instances in the `g` category with generation greater than 4 (such as G5 and G6e), which offer NVIDIA GPUs suitable for serving a range of model sizes. The taint ensures only GPU-eligible pods are scheduled on these nodes. Including both On-Demand and Spot lets Karpenter pick the most cost-effective option with available capacity.
+Create a dynamic scaling GPU NodePool. Note: the following command will not provision GPU instances. It creates a template that Karpenter uses to provision GPU nodes when a matching pod is scheduled.
 
 ```bash
 cat << 'EOF' | kubectl apply -f -
@@ -103,7 +103,9 @@ spec:
 EOF
 ```
 
-Validate the NodePool:
+This NodePool will provision GPU instances in the `g` category with generation greater than 4 (such as G5 and G6e). It uses the `default` NodeClass, which automatically selects the appropriate AMI variant based on the instance type (accelerated AMI for GPU instances, standard AMI for CPU instances). The `nvidia.com/gpu:NoSchedule` taint ensures only GPU-eligible pods are scheduled on these nodes. The `karpenter.sh/capacity-type` includes both On-Demand and Spot, which lets Karpenter pick the most cost-effective option with available capacity.
+
+Validate the NodePool was created successfully:
 
 ```bash
 kubectl get nodepools
@@ -183,9 +185,9 @@ Expected output:
 +-----------------------------------------+------------------------+----------------------+
 ```
 
-The output shows the GPU model, driver version, CUDA version, and available memory. The GPU model and memory will vary depending on the instance type Karpenter selects (for example, G5 instances have NVIDIA A10G GPUs while G6e instances have NVIDIA L40S GPUs).
+The output shows the GPU model, driver version, CUDA version, and available memory. In this example, Karpenter provisioned a G7e instance which has an NVIDIA RTX PRO 6000 Blackwell GPU with 96 GB of memory. The 30C is the current GPU temperature and P0 means the GPU is in its highest performance state (idle but ready). The `81W / 600W` shows current power draw vs max power capacity, and `0MiB / 97887MiB` shows current GPU memory used vs total available. Since the pod just ran `nvidia-smi` and exited, no workload is using the GPU so memory is at 0 and power is at idle. The NVIDIA GPU driver version (580.126.09) comes from the Bottlerocket AMI, while the CUDA version (13.0) comes from the container image. The GPU model and memory will vary depending on the instance type Karpenter selects. G5 instances have NVIDIA A10G GPUs (24 GB), G6e instances have NVIDIA L40S GPUs (48 GB), and G7e instances have NVIDIA RTX PRO 6000 GPUs (96 GB).
 
-Use `kubectl describe` to see the full pod lifecycle events. This is useful for understanding how Karpenter and the scheduler coordinated to provision a node and place the pod:
+To understand how Karpenter and the scheduler coordinated to provision a node and place the pod, check the pod's lifecycle events:
 
 ```bash
 kubectl describe po nvidia-smi
@@ -206,11 +208,22 @@ Events:
   Normal   Started                 8s    kubelet                spec.containers{nvidia-smi}: Started container nvidia-smi
 ```
 
-The events show the pod scheduling sequence: the pod initially fails to schedule because no GPU nodes exist (`FailedScheduling`), Karpenter nominates a new NodeClaim (`Nominated`), the scheduler assigns the pod once the node is ready (`Scheduled`), and then the container image is pulled and started.
+These events show the pod scheduling sequence: the pod initially fails to schedule because no GPU nodes exist (`FailedScheduling`), Karpenter nominates a new NodeClaim (`Nominated`), the scheduler assigns the pod once the node is ready (`Scheduled`), and then the container image is pulled and started.
 
-Verify the node is provisioning by checking the NodeClaim, NodePool, and nodes.
+A NodeClaim is a request Karpenter creates to provision a specific node. It shows the instance type, capacity type, AZ, and whether the node is ready.
 
-A NodeClaim is a request Karpenter creates to provision a specific node. It shows the instance type, capacity type, AZ, and whether the node is ready:
+```bash
+kubectl get nodeclaims
+```
+
+Expected output:
+
+```
+NAME                    TYPE          CAPACITY    ZONE         NODE                  READY   AGE
+gpu-inf-dynamic-xxxxx   g7e.2xlarge   spot        us-east-2b   i-0xxxxxxxxxxxx       True    2m
+```
+
+The NodeClaim shows that Karpenter picked a `g7e.2xlarge` Spot instance in `us-east-2b`. The instance type and AZ will vary based on what capacity is available at the time.
 
 Check the node details:
 
@@ -242,40 +255,19 @@ gpu-inf-dynamic   default     1       True    5m
 
 `NODES: 1` means Karpenter provisioned one node from this NodePool. If `NODES: 0`, either the pod hasn't triggered provisioning yet or the node was already removed after the job completed.
 
-Check the NodeClaim to see the specific instance Karpenter launched. A NodeClaim represents a single node provisioning request and shows the instance type, capacity type, and AZ that Karpenter selected:
-
-```bash
-kubectl get nodeclaims
-```
-
-Expected output:
-
-```
-NAME                    TYPE          CAPACITY    ZONE         NODE                  READY   AGE
-gpu-inf-dynamic-xxxxx   g7e.2xlarge   spot        us-east-2b   i-0xxxxxxxxxxxx       True    2m
-```
-
-Here Karpenter picked a `g7e.2xlarge` Spot instance in `us-east-2b`. The instance type and AZ will vary based on what capacity is available at the time.
-
-If the pod is not scheduling and no node appears, check for Insufficient Capacity Errors (ICE). An ICE occurs when the requested instance type is temporarily unavailable in the targeted Availability Zone:
+> **Troubleshooting tip:** If the pod is not scheduling and no node appears, check for Insufficient Capacity Errors (ICE). An ICE occurs when the requested instance type is temporarily unavailable in the targeted Availability Zone.
 
 ```bash
 kubectl get events | grep InsufficientCapacityError
 ```
 
-If you see an ICE, the output will look similar to:
+If you see `Unable to fulfill capacity due to your request configuration`, Karpenter caches that specific offering (instance type + AZ + capacity type) as unavailable for 3 minutes and will not retry it during that window. Other eligible offerings remain active, so Karpenter will try different instance types or AZs immediately. Widening the set of allowed instance types and AZs in your NodePool increases the chances of landing capacity.
 
-```
-3m7s   Warning   InsufficientCapacityError   nodeclaim/gpu-inf-dynamic-xxxxx   Unable to fulfill capacity due to your request configuration. Please adjust your request and try again.
-```
-
-Karpenter will automatically retry across available AZs. When it receives an ICE, it caches that specific offering (instance type + AZ + capacity type) as unavailable for 3 minutes, then retries. Other offerings remain eligible, so widening the set of allowed instance types and AZs in your NodePool increases the chances of landing capacity.
-
-> **Note:** Spot instances launched by Karpenter will not appear in the EC2 Spot Requests console. Karpenter uses the EC2 `CreateFleet` API with `type: instant`, which provisions instances synchronously without creating a Spot Request object. The instances appear in the normal EC2 Instances console with a `spot` lifecycle.
+> **Note:** Spot instances launched by Karpenter will not appear in the EC2 Spot Requests console. Karpenter uses the EC2 `CreateFleet` API with `type: instant`, which provisions instances synchronously without creating a Spot Request object. The instances appear in the EC2 Instances console with a `spot` lifecycle.
 
 ## Use On-Demand Capacity Reservation (ODCR) with Spot Overflow
 
-This section sets up two NodePools: a static ODCR-backed NodePool (`gpu-inf-static`) for guaranteed capacity, and the dynamic Spot/On-Demand NodePool (`gpu-inf-dynamic`) created earlier as overflow. The ODCR node is provisioned immediately, so the scheduler places pods there first. When the ODCR node is full, additional pods go Pending and Karpenter provisions Spot/On-Demand nodes from the dynamic `gpu-inf-dynamic` NodePool.
+In this section we will create an On-Demand Capacity Reservation (ODCR) for one GPU instance and set up an additional static NodeClass and NodePool to utilize it. The static NodePool provisions the instance immediately, so the scheduler naturally places pods there first since it already exists. If the static node is full, additional pods go Pending and Karpenter provisions nodes from the dynamic `gpu-inf-dynamic` NodePool as overflow. We will add a soft node affinity (`preferredDuringSchedulingIgnoredDuringExecution`) with the `capacity: odcr` label to explicitly prefer the static node first, in case nodes from both the static and dynamic NodePools are running simultaneously.
 
 ### Create the Capacity Reservation
 
