@@ -1,6 +1,10 @@
 # GPU Inference
 
-Instructions to create an EKS Auto Mode cluster with GPU NodePools optimized for inference workloads.
+This section contains instructions to create an EKS Auto Mode cluster with GPU NodePools optimized for inference workloads, as depicted in the following diagram:
+
+![Diagram 1: Inference Architecture with EKS Auto Mode](inference-arch-auto-mode.png)
+
+_Diagram 1: EKS Auto Mode cluster with a static ODCR-backed GPU node and a dynamic Spot/On-Demand overflow NodePool for inference workloads._
 
 ## Prerequisites
 
