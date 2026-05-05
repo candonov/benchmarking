@@ -688,6 +688,10 @@ Clean up the test pod:
 kubectl delete pod s3-test
 ```
 
+## Monitoring
+
+<!-- TODO: Add GPU monitoring setup (DCGM exporter, Prometheus, Grafana dashboards) -->
+
 ## Cleanup
 
 > **Note:** If you plan to continue with the next sections of this guide, skip the full cleanup. Only run it when you are done.
@@ -725,6 +729,14 @@ kubectl delete nodeclass gpu-inf-static
 # Cancel the Capacity Reservation
 aws ec2 cancel-capacity-reservation --capacity-reservation-id $CAPACITY_RESERVATION_ID
 ```
+
+### Remove S3 Bucket and Pod Identity
+
+<!-- TODO: Add S3 bucket cleanup and pod identity removal -->
+
+### Remove Monitoring
+
+<!-- TODO: Add monitoring cleanup -->
 
 ### Delete Cluster and Remaining Resources
 
