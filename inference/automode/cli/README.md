@@ -879,7 +879,7 @@ grafana:
         gnetId: 22515
         revision: 1
         datasource: Amazon-Managed-Prometheus
-      nvidia-dcgm-overview:
+      vllm:
         gnetId: 25043
         revision: 1
         datasource: Amazon-Managed-Prometheus
@@ -1047,15 +1047,6 @@ Verify the DCGM exporter DaemonSet is deployed:
 ```bash
 kubectl get daemonset dcgm-exporter -n monitoring
 ```
-
-Expected output (with no GPU nodes running):
-
-```
-NAME            DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR                                        AGE
-dcgm-exporter   0         0         0       0            0           eks.amazonaws.com/instance-gpu-manufacturer=nvidia   2m
-```
-
-`DESIRED: 0` is expected when no GPU nodes are running. The DaemonSet will automatically schedule a DCGM exporter pod on each GPU node as it comes up.
 
 Expected output (with a GPU node running):
 
