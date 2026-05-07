@@ -8,6 +8,8 @@ For visualization, Amazon Managed Grafana (AMG) is available but requires Active
 
 ## Create AMP Workspace
 
+Create an AMP workspace to store metrics:
+
 ```bash
 aws amp create-workspace \
   --alias "amp-ws-${CLUSTER_NAME}" \
@@ -37,8 +39,6 @@ AMP_ENDPOINT=$(aws amp describe-workspace \
 
 echo "AMP Endpoint: ${AMP_ENDPOINT}"
 ```
-
-## Create IAM Policy for Prometheus and Grafana
 
 Create an IAM policy that allows Prometheus to remote-write metrics and Grafana to query them:
 
@@ -85,7 +85,7 @@ AMP_POLICY_ARN=$(aws iam create-policy \
 echo "AMP Policy ARN: ${AMP_POLICY_ARN}"
 ```
 
-## Create Namespace and Service Accounts
+Create the monitoring namespace and service accounts for Prometheus and Grafana:
 
 ```bash
 kubectl create namespace monitoring
@@ -94,7 +94,7 @@ kubectl create serviceaccount amp-iamproxy-ingest-service-account -n monitoring
 kubectl create serviceaccount grafana-sa -n monitoring
 ```
 
-## Create Pod Identity Associations
+Create Pod Identity Associations to link the service accounts to the IAM policy:
 
 ```bash
 eksctl create podidentityassociation \
@@ -307,35 +307,55 @@ customMetrics: |
   DCGM_FI_DEV_POWER_USAGE,              gauge, Power draw (in W).
   DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION, counter, Total energy consumption since boot (in mJ).
   # PCIe
-  DCGM_FI_PROF_PCIE_TX_BYTES,  counter, Total number of bytes transmitted through PCIe TX.
-  DCGM_FI_PROF_PCIE_RX_BYTES,  counter, Total number of bytes received through PCIe RX.
+  DCGM_FI_PROF_PCIE_TX_BYTES,  counter, Number of bytes transmitted through PCIe TX (in KB) via NVML.
+  DCGM_FI_PROF_PCIE_RX_BYTES,  counter, Number of bytes received through PCIe RX (in KB) via NVML.
   DCGM_FI_DEV_PCIE_REPLAY_COUNTER, counter, Total number of PCIe retries.
-  # Utilization
+  # Utilization (the sample period varies depending on the product)
   DCGM_FI_DEV_GPU_UTIL,      gauge, GPU utilization (in %).
   DCGM_FI_DEV_MEM_COPY_UTIL, gauge, Memory utilization (in %).
   DCGM_FI_DEV_ENC_UTIL,      gauge, Encoder utilization (in %).
   DCGM_FI_DEV_DEC_UTIL,      gauge, Decoder utilization (in %).
   # Errors and violations
-  DCGM_FI_DEV_XID_ERRORS,            gauge,   Value of the last XID error encountered.
+  DCGM_FI_DEV_XID_ERRORS,            gauge, Value of the last XID error encountered.
+  DCGM_EXP_XID_ERRORS_COUNT,         gauge, Value of count of XID errors encountered.
   DCGM_FI_DEV_POWER_VIOLATION,       counter, Throttling duration due to power constraints (in us).
   DCGM_FI_DEV_THERMAL_VIOLATION,     counter, Throttling duration due to thermal constraints (in us).
+  DCGM_FI_DEV_SYNC_BOOST_VIOLATION,  counter, Throttling duration due to sync-boost constraints (in us).
+  DCGM_FI_DEV_BOARD_LIMIT_VIOLATION, counter, Throttling duration due to board limit constraints (in us).
+  DCGM_FI_DEV_LOW_UTIL_VIOLATION,    counter, Throttling duration due to low utilization (in us).
+  DCGM_FI_DEV_RELIABILITY_VIOLATION, counter, Throttling duration due to reliability constraints (in us).
   # Memory usage
   DCGM_FI_DEV_FB_FREE, gauge, Framebuffer memory free (in MiB).
   DCGM_FI_DEV_FB_USED, gauge, Framebuffer memory used (in MiB).
+  # Retired pages
+  DCGM_FI_DEV_RETIRED_SBE,     counter, Total number of retired pages due to single-bit errors.
+  DCGM_FI_DEV_RETIRED_DBE,     counter, Total number of retired pages due to double-bit errors.
+  DCGM_FI_DEV_RETIRED_PENDING, counter, Total number of pages pending retirement.
+  # NVLink
+  DCGM_FI_DEV_NVLINK_BANDWIDTH_TOTAL, counter, Total number of NVLink bandwidth counters for all lanes
+  DCGM_FI_PROF_NVLINK_TX_BYTES,       counter, The rate of data transmitted over NVLink not including protocol headers in bytes per second.
+  DCGM_FI_PROF_NVLINK_RX_BYTES,       counter, The rate of data received over NVLink not including protocol headers in bytes per second.
+  # DCP metrics
+  DCGM_FI_PROF_GR_ENGINE_ACTIVE,   gauge, Ratio of time the graphics engine is active (in %).
+  DCGM_FI_PROF_SM_ACTIVE,          gauge, The ratio of cycles an SM has at least 1 warp assigned (in %).
+  DCGM_FI_PROF_SM_OCCUPANCY,       gauge, The ratio of number of warps resident on an SM (in %).
+  DCGM_FI_PROF_PIPE_TENSOR_ACTIVE, gauge, Ratio of cycles the tensor (HMMA) pipe is active (in %).
+  DCGM_FI_PROF_DRAM_ACTIVE,        gauge, Ratio of cycles the device memory interface is active sending or receiving data (in %).
+  DCGM_FI_DEV_CLOCK_THROTTLE_REASONS, gauge, Current clock throttle reasons (bitmask of DCGM_CLOCKS_THROTTLE_REASON_*)
+  DCGM_FI_DEV_GPU_NVLINK_ERRORS,      gauge, Identifies a GPU NVLink error type returned by DCGM_FI_DEV_GPU_NVLINK_ERRORS.
+  ## NVLink
+  DCGM_FI_DEV_NVLINK_BANDWIDTH_L0, counter, The number of bytes of active NVLink rx or tx data including both header and payload.
+  ## Remapped rows
+  DCGM_FI_DEV_UNCORRECTABLE_REMAPPED_ROWS, counter, Number of remapped rows for uncorrectable errors.
+  DCGM_FI_DEV_CORRECTABLE_REMAPPED_ROWS, counter, Number of remapped rows for correctable errors.
+  DCGM_FI_DEV_ROW_REMAP_FAILURE, gauge, whether remapping of rows has failed.
+  ## Profiling metrics
+  DCGM_FI_PROF_PIPE_FP64_ACTIVE, gauge, Ratio of cycles the fp64 pipes are active (in %).
+  DCGM_FI_PROF_PIPE_FP32_ACTIVE, gauge, Ratio of cycles the fp32 pipes are active (in %).
+  DCGM_FI_PROF_PIPE_FP16_ACTIVE, gauge, Ratio of cycles the fp16 pipes are active (in %).
   # ECC
   DCGM_FI_DEV_ECC_SBE_VOL_TOTAL, counter, Total number of single-bit volatile ECC errors.
   DCGM_FI_DEV_ECC_DBE_VOL_TOTAL, counter, Total number of double-bit volatile ECC errors.
-  # NVLink
-  DCGM_FI_DEV_NVLINK_BANDWIDTH_TOTAL, counter, Total number of NVLink bandwidth counters for all lanes.
-  DCGM_FI_PROF_NVLINK_TX_BYTES,       gauge,   Total number of bytes of active NVLink tx data.
-  DCGM_FI_PROF_NVLINK_RX_BYTES,       gauge,   Total number of bytes of active NVLink rx data.
-  # DCP metrics
-  DCGM_FI_PROF_GR_ENGINE_ACTIVE,   gauge, Ratio of time the graphics engine is active.
-  DCGM_FI_PROF_SM_ACTIVE,          gauge, The ratio of cycles an SM has at least 1 warp assigned.
-  DCGM_FI_PROF_SM_OCCUPANCY,       gauge, The ratio of number of warps resident on an SM.
-  DCGM_FI_PROF_PIPE_TENSOR_ACTIVE, gauge, Ratio of cycles the tensor (HMMA) pipe is active.
-  DCGM_FI_PROF_DRAM_ACTIVE,        gauge, Ratio of cycles the device memory interface is active.
-  DCGM_FI_PROF_PIPE_FP16_ACTIVE,   gauge, Ratio of cycles the fp16 pipes are active.
 EOF
 ```
 
