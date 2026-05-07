@@ -197,14 +197,26 @@ grafana:
       nvidia-dcgm:
         gnetId: 25261
         revision: 1
-        datasource: Amazon-Managed-Prometheus
+        datasource:
+          - name: DS_PROMETHEUS
+            value: Amazon-Managed-Prometheus
       vllm:
         gnetId: 25043
         revision: 1
-        datasource: Amazon-Managed-Prometheus
+        datasource:
+          - name: DS_PROMETHEUS
+            value: Amazon-Managed-Prometheus
 
 EOF
 ```
+
+Validate the variables were populated correctly in the values file:
+
+```bash
+grep -E "url:|region:" /tmp/kube-prometheus-values.yaml
+```
+
+You should see the full AMP endpoint URL (starting with `https://aps-workspaces...`) and your region. If any values are empty, re-export `AMP_ENDPOINT` and `AWS_REGION` and recreate the file.
 
 Install the kube-prometheus-stack helm chart:
 
@@ -338,7 +350,7 @@ customMetrics: |
   DCGM_FI_DEV_RETIRED_DBE,     counter, Total number of retired pages due to double-bit errors.
   DCGM_FI_DEV_RETIRED_PENDING, counter, Total number of pages pending retirement.
   # NVLink
-  DCGM_FI_DEV_NVLINK_BANDWIDTH_TOTAL, counter, Total number of NVLink bandwidth counters for all lanes
+  DCGM_FI_DEV_NVLINK_BANDWIDTH_TOTAL, counter, Total number of NVLink bandwidth counters for all lanes.
   DCGM_FI_PROF_NVLINK_TX_BYTES,       counter, The rate of data transmitted over NVLink not including protocol headers in bytes per second.
   DCGM_FI_PROF_NVLINK_RX_BYTES,       counter, The rate of data received over NVLink not including protocol headers in bytes per second.
   # DCP metrics
@@ -347,7 +359,7 @@ customMetrics: |
   DCGM_FI_PROF_SM_OCCUPANCY,       gauge, The ratio of number of warps resident on an SM (in %).
   DCGM_FI_PROF_PIPE_TENSOR_ACTIVE, gauge, Ratio of cycles the tensor (HMMA) pipe is active (in %).
   DCGM_FI_PROF_DRAM_ACTIVE,        gauge, Ratio of cycles the device memory interface is active sending or receiving data (in %).
-  DCGM_FI_DEV_CLOCK_THROTTLE_REASONS, gauge, Current clock throttle reasons (bitmask of DCGM_CLOCKS_THROTTLE_REASON_*)
+  DCGM_FI_DEV_CLOCK_THROTTLE_REASONS, gauge, Current clock throttle reasons (bitmask of DCGM_CLOCKS_THROTTLE_REASON_*).
   DCGM_FI_DEV_GPU_NVLINK_ERRORS,      gauge, Identifies a GPU NVLink error type returned by DCGM_FI_DEV_GPU_NVLINK_ERRORS.
   ## NVLink
   DCGM_FI_DEV_NVLINK_BANDWIDTH_L0, counter, The number of bytes of active NVLink rx or tx data including both header and payload.
