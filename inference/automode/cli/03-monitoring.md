@@ -201,7 +201,7 @@ grafana:
           - name: DS_PROMETHEUS
             value: Amazon-Managed-Prometheus
       vllm:
-        gnetId: 25043
+        gnetId: 25263
         revision: 1
         datasource:
           - name: DS_PROMETHEUS
