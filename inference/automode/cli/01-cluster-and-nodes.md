@@ -274,7 +274,7 @@ If you see `Unable to fulfill capacity due to your request configuration`, Karpe
 
 ## Use On-Demand Capacity Reservation (ODCR) with Spot Overflow
 
-In this section we will create an On-Demand Capacity Reservation (ODCR) for one GPU instance and set up an additional static NodeClass and NodePool to utilize it. The static NodePool provisions the instance immediately, so the scheduler naturally places pods there first since it already exists. If the static node is full, additional pods go Pending and Karpenter provisions nodes from the dynamic `gpu-inf-dynamic` NodePool as overflow. We will add a soft node affinity (`preferredDuringSchedulingIgnoredDuringExecution`) with the `capacity: odcr` label to explicitly prefer the static node first, in case nodes from both the static and dynamic NodePools are running simultaneously.
+In this section we will create an On-Demand Capacity Reservation (ODCR) for one GPU instance and set up an additional static NodeClass and NodePool to utilize it. The static NodePool provisions the instance immediately, so the scheduler naturally places pods there first since it already exists. If the static node is full, additional pods go Pending and Karpenter provisions nodes from the dynamic `gpu-inf-dynamic` NodePool as overflow. We will add a soft node affinity (`preferredDuringSchedulingIgnoredDuringExecution`) with the `karpenter.sh/capacity-type: reserved` label to explicitly prefer the static node first, in case nodes from both the static and dynamic NodePools are running simultaneously.
 
 ### Create the Capacity Reservation, NodeClass, and NodePool
 
@@ -375,7 +375,6 @@ spec:
   template:
     metadata:
       labels:
-        capacity: odcr
         guide: eks-docs-inf
     spec:
       nodeClassRef:
@@ -388,14 +387,14 @@ spec:
           values: ["g6e.xlarge"]  # Must match $INSTANCE_TYPE
         - key: "karpenter.sh/capacity-type"
           operator: In
-          values: ["on-demand"]
+          values: ["reserved"]
       taints:
         - key: "nvidia.com/gpu"
           effect: NoSchedule
 EOF
 ```
 
-This NodePool provisions a node immediately using the capacity reservation. It uses `replicas: 1` to keep one node running at all times. Karpenter resolves the reservation's AZ, instance type, and platform from EC2 automatically, so you don't need to specify the AZ in the NodePool requirements.
+This NodePool provisions a node immediately using the capacity reservation. It uses `replicas: 1` to keep one node running at all times. Karpenter resolves the reservation's AZ, instance type, and platform from EC2 automatically, so you don't need to specify the AZ in the NodePool requirements. Setting `karpenter.sh/capacity-type: reserved` means Karpenter will only launch instances that match a Capacity Reservation defined in the NodeClass's `capacityReservationSelectorTerms`. If the reservation is full or doesn't exist, the NodeClaim will fail rather than falling back to regular on-demand.
 
 Validate the NodePool and node provisioning:
 
@@ -413,7 +412,7 @@ gpu-inf-static    gpu-inf-static   1       True    8s
 system            default          2       True    20m
 ```
 
-Wait for the ODCR node to provision (may take 5-10 minutes):
+Wait a few seconds for the ODCR node to provision:
 
 ```bash
 kubectl get nodes -o wide
@@ -433,7 +432,7 @@ Both NodePools use the same `nvidia.com/gpu` taint. A pod that tolerates this ta
 1. The ODCR node is already running → scheduler places the pod there first
 2. If the ODCR node is full, the pod goes Pending → Karpenter provisions a Spot/On-Demand node from the `gpu-inf-dynamic` NodePool
 
-To explicitly prefer the static node, add a soft node affinity to your pod spec using the `capacity: odcr` label from the static NodePool.
+To explicitly prefer the static node, add a soft node affinity to your pod spec using the `karpenter.sh/capacity-type: reserved` label that Karpenter automatically applies to nodes launched from a capacity reservation.
 
 ### Test Overflow Scaling
 
@@ -468,9 +467,9 @@ spec:
             - weight: 100
               preference:
                 matchExpressions:
-                  - key: capacity
+                  - key: karpenter.sh/capacity-type
                     operator: In
-                    values: ["odcr"]
+                    values: ["reserved"]
       containers:
         - name: nvidia-smi
           image: public.ecr.aws/amazonlinux/amazonlinux:2023-minimal
