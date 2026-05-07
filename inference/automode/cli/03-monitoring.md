@@ -6,6 +6,14 @@ Kubernetes users often use Prometheus for metrics collection, but managing long-
 
 For visualization, Amazon Managed Grafana (AMG) is available but requires Active Directory integration for authentication, which is beyond the scope of this guide. Instead, we use the self-managed Grafana that comes with the kube-prometheus-stack Helm chart.
 
+If you are starting from this section or opened a new terminal, set the environment variables from the previous steps:
+
+```bash
+# NOTE: Keep this cluster name consistent throughout the guide. Do not modify.
+export CLUSTER_NAME=eks-docs-inf
+export AWS_REGION=us-east-2
+```
+
 ## Create AMP Workspace
 
 Create an AMP workspace to store metrics:

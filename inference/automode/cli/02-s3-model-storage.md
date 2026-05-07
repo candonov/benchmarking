@@ -2,6 +2,14 @@
 
 [← Previous: Set up cluster and nodes](01-cluster-and-nodes.md) | [Next: Set up monitoring →](03-monitoring.md)
 
+If you are starting from this section or opened a new terminal, set the environment variables from the previous step:
+
+```bash
+# NOTE: Keep this cluster name consistent throughout the guide. Do not modify.
+export CLUSTER_NAME=eks-docs-inf
+export AWS_REGION=us-east-2
+```
+
 ## Create S3 Bucket for Model Storage
 
 Create an S3 bucket to store model weights. The bucket name includes a random suffix to avoid naming conflicts:
