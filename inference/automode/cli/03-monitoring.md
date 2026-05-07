@@ -378,37 +378,3 @@ dcgm-exporter   1         1         1       1            1           eks.amazona
 ```
 
 After a few minutes, GPU metrics will be available in Grafana. Navigate to **Drilldown > Metrics** and search for `DCGM_FI_DEV_GPU_UTIL` to see GPU utilization across your nodes.
-
-## Cleanup
-
-### Remove Monitoring
-
-```bash
-# Uninstall DCGM exporter
-helm uninstall dcgm-exporter -n monitoring
-
-# Uninstall kube-prometheus-stack
-helm uninstall kube-prometheus-stack -n monitoring
-
-# Delete Pod Identity Associations
-eksctl delete podidentityassociation \
-  --cluster ${CLUSTER_NAME} \
-  --namespace monitoring \
-  --service-account-name amp-iamproxy-ingest-service-account \
-  --region ${AWS_REGION}
-
-eksctl delete podidentityassociation \
-  --cluster ${CLUSTER_NAME} \
-  --namespace monitoring \
-  --service-account-name grafana-sa \
-  --region ${AWS_REGION}
-
-# Delete IAM policy
-aws iam delete-policy --policy-arn ${AMP_POLICY_ARN}
-
-# Delete AMP workspace
-aws amp delete-workspace --workspace-id ${AMP_WORKSPACE_ID} --region ${AWS_REGION}
-
-# Delete namespace
-kubectl delete namespace monitoring
-```
