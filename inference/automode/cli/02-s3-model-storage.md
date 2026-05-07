@@ -1,7 +1,5 @@
 # Set Up S3 Model Storage
 
-[← Previous: Set up cluster and nodes](01-cluster-and-nodes.md) | [Next: Set up monitoring →](03-monitoring.md)
-
 If you are starting from this section or opened a new terminal, set the environment variables from the previous step:
 
 ```bash
@@ -181,6 +179,12 @@ Clean up the test pod:
 ```bash
 kubectl delete pod s3-test
 ```
+
+---
+
+[← Previous: Set up cluster and nodes](01-cluster-and-nodes.md) | [Next: Set up monitoring →](03-monitoring.md)
+
+---
 
 ## Cleanup
 

@@ -1,7 +1,5 @@
 # Set Up Monitoring
 
-[← Previous: Set up S3 model storage](02-s3-model-storage.md) | [Back to main guide](README.md)
-
 Kubernetes users often use Prometheus for metrics collection, but managing long-term metrics storage, high availability, and aggregation across multiple clusters adds operational overhead. In this guide we use Amazon Managed Prometheus (AMP) to handle metrics storage so that metrics persist even when GPU nodes are interrupted or scaled down. AMP also makes it easy to aggregate metrics from multiple clusters in a single query endpoint. We will use the kube-prometheus-stack Helm chart to scrape metrics from the cluster and remote-write them to AMP.
 
 For visualization, Amazon Managed Grafana (AMG) is available but requires Active Directory integration for authentication, which is beyond the scope of this guide. Instead, we use the self-managed Grafana that comes with the kube-prometheus-stack Helm chart.
@@ -197,10 +195,10 @@ grafana:
   dashboards:
     default:
       nvidia-dcgm:
-        gnetId: 22515
+        gnetId: 25261
         revision: 1
         datasource: Amazon-Managed-Prometheus
-      nvidia-dcgm-overview:
+      vllm:
         gnetId: 25043
         revision: 1
         datasource: Amazon-Managed-Prometheus
@@ -406,3 +404,7 @@ dcgm-exporter   1         1         1       1            1           eks.amazona
 ```
 
 After a few minutes, GPU metrics will be available in Grafana. Navigate to **Drilldown > Metrics** and search for `DCGM_FI_DEV_GPU_UTIL` to see GPU utilization across your nodes.
+
+---
+
+[← Previous: Set up S3 model storage](02-s3-model-storage.md) | [Back to main guide](README.md)

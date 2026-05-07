@@ -1,7 +1,5 @@
 # Set Up Cluster and Nodes
 
-[← Back to main guide](README.md) | [Next: Set up S3 model storage →](02-s3-model-storage.md)
-
 This section contains instructions to create an EKS Auto Mode cluster with GPU NodePools optimized for inference workloads, as depicted in the following diagram:
 
 ![Diagram 1: Inference Architecture with EKS Auto Mode](inference-arch-auto-mode.png)
@@ -50,6 +48,7 @@ eksctl create cluster \
   --name=$CLUSTER_NAME \
   --region=$AWS_REGION \
   --enable-auto-mode \
+  --version=1.35 \
   --zones=$AZS
 ```
 
@@ -519,6 +518,12 @@ Clean up the test deployment:
 ```bash
 kubectl delete deployment gpu-overflow-test
 ```
+
+---
+
+[← Back to main guide](README.md) | [Next: Set up S3 model storage →](02-s3-model-storage.md)
+
+---
 
 ## Cleanup
 
