@@ -291,7 +291,7 @@ CR_AZ="us-east-2a"
 INSTANCE_TYPE="g6e.xlarge"
 ```
 
-> **Note**: If the command succeeds it will result in a charge for the reserved instance type until you manually cancel it with `aws ec2 cancel-capacity-reservation --capacity-reservation-id <id>`.
+> **Note**: If the following command succeeds it will result in a charge for the reserved instance type until you manually cancel it with `aws ec2 cancel-capacity-reservation --capacity-reservation-id <id>`.
 
 ```bash
 aws ec2 create-capacity-reservation \
@@ -371,7 +371,7 @@ gpu-inf-static   eksctl-eks-docs-inf-cluster-AutoModeNodeRole-CGzs3dk0r3KQ   Tru
 Apply the static NodePool that uses the ODCR-backed NodeClass:
 
 ```bash
-cat << 'EOF' | kubectl apply -f -
+cat << EOF | kubectl apply -f -
 apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
@@ -392,7 +392,7 @@ spec:
       requirements:
         - key: "node.kubernetes.io/instance-type"
           operator: In
-          values: ["g6e.xlarge"]  # Must match $INSTANCE_TYPE
+          values: ["${INSTANCE_TYPE}"]  # Must match the Capacity Reservation instance type
         - key: "karpenter.sh/capacity-type"
           operator: In
           values: ["reserved"]
