@@ -538,7 +538,14 @@ kubectl delete deployment gpu-overflow-test
 
 > **Note:** If you plan to continue with the next sections of this guide, skip the full cleanup. Only run it when you are done.
 
-### Remove GPU Pods
+### Clean Up GPU Pods
+
+If you are starting from a new terminal, set the cluster name and region:
+
+```bash
+export CLUSTER_NAME=eks-docs-inf
+export AWS_REGION=us-east-2
+```
 
 Verify no pods are requesting GPUs on the cluster:
 
@@ -550,36 +557,64 @@ kubectl get pods --all-namespaces -o json | jq -r \
 If any pods show up, delete them to release the GPU nodes:
 
 ```bash
-kubectl delete deployment gpu-overflow-test
-kubectl delete pod nvidia-smi
+kubectl delete deployment gpu-overflow-test --ignore-not-found
+kubectl delete pod nvidia-smi --ignore-not-found
 ```
 
-### Remove Static NodePool and NodeClass
+### Clean Up Static NodePool and NodeClass
 
 > **Note:** If you want to take a break and not pay for the ODCR, you can run this subsection only. When you are ready to return, recreate the ODCR, NodeClass, and NodePool with the commands above.
 
+Look up the Capacity Reservation ID by instance type:
+
 ```bash
-# Delete ODCR NodePool (will drain and terminate the node)
+INSTANCE_TYPE="g6e.xlarge"
+CAPACITY_RESERVATION_ID=$(aws ec2 describe-capacity-reservations \
+  --filters "Name=state,Values=active" "Name=instance-type,Values=${INSTANCE_TYPE}" \
+  --query 'CapacityReservations[0].CapacityReservationId' \
+  --output text \
+  --region ${AWS_REGION})
+echo "Capacity Reservation ID: ${CAPACITY_RESERVATION_ID}"
+```
+
+Delete the ODCR NodePool (this drains and terminates the node):
+
+```bash
 kubectl delete nodepool gpu-inf-static
+```
 
-# Wait 60s for the NodeClaims to terminate
+Wait for the NodeClaims to terminate:
+
+```bash
 sleep 60
+```
 
-# Delete ODCR NodeClass
+Delete the ODCR NodeClass:
+
+```bash
 kubectl delete nodeclass gpu-inf-static
+```
 
-# Cancel the Capacity Reservation
-aws ec2 cancel-capacity-reservation --capacity-reservation-id $CAPACITY_RESERVATION_ID
+Cancel the Capacity Reservation:
+
+```bash
+aws ec2 cancel-capacity-reservation --capacity-reservation-id ${CAPACITY_RESERVATION_ID}
 ```
 
 ### Delete Cluster and Remaining Resources
 
-Delete all remaining resources created in this guide:
+Delete the dynamic NodePool:
 
 ```bash
-# Delete dynamic NodePool
 kubectl delete nodepool gpu-inf-dynamic
+```
 
-# Delete the cluster
+Delete the cluster:
+
+```bash
 eksctl delete cluster --name=$CLUSTER_NAME --region=$AWS_REGION
 ```
+
+---
+
+[← Back to main guide](README.md) | [Next: Set up S3 model storage →](02-s3-model-storage.md)

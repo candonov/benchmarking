@@ -427,34 +427,86 @@ After a few minutes, GPU metrics will be available in Grafana. Navigate to **Dri
 
 > **Note:** If you plan to keep using monitoring with the cluster, skip the cleanup. Only run it when you are done with monitoring.
 
-### Remove Monitoring
+### Clean Up Monitoring
+
+If you are starting from a new terminal, set the cluster name and region:
 
 ```bash
-# Uninstall DCGM exporter
+export CLUSTER_NAME=eks-docs-inf
+export AWS_REGION=us-east-2
+```
+
+Look up the IAM policy ARN:
+
+```bash
+AMP_POLICY_ARN=$(aws iam list-policies \
+  --scope Local \
+  --query "Policies[?PolicyName=='${CLUSTER_NAME}-amp-grafana-policy'].Arn" \
+  --output text)
+echo "AMP Policy ARN: ${AMP_POLICY_ARN}"
+```
+
+Look up the AMP workspace ID:
+
+```bash
+AMP_WORKSPACE_ID=$(aws amp list-workspaces \
+  --alias "amp-ws-${CLUSTER_NAME}" \
+  --query 'workspaces[0].workspaceId' \
+  --output text \
+  --region ${AWS_REGION})
+echo "AMP Workspace ID: ${AMP_WORKSPACE_ID}"
+```
+
+Uninstall the DCGM exporter Helm release:
+
+```bash
 helm uninstall dcgm-exporter -n monitoring
+```
 
-# Uninstall kube-prometheus-stack
+Uninstall the kube-prometheus-stack Helm release:
+
+```bash
 helm uninstall kube-prometheus-stack -n monitoring
+```
 
-# Delete Pod Identity Associations
+Delete the Pod Identity association for the Prometheus ingest service account:
+
+```bash
 eksctl delete podidentityassociation \
   --cluster ${CLUSTER_NAME} \
   --namespace monitoring \
   --service-account-name amp-iamproxy-ingest-service-account \
   --region ${AWS_REGION}
+```
 
+Delete the Pod Identity association for the Grafana service account:
+
+```bash
 eksctl delete podidentityassociation \
   --cluster ${CLUSTER_NAME} \
   --namespace monitoring \
   --service-account-name grafana-sa \
   --region ${AWS_REGION}
+```
 
-# Delete IAM policy
+Delete the IAM policy used by Prometheus and Grafana:
+
+```bash
 aws iam delete-policy --policy-arn ${AMP_POLICY_ARN}
+```
 
-# Delete AMP workspace
+Delete the AMP workspace:
+
+```bash
 aws amp delete-workspace --workspace-id ${AMP_WORKSPACE_ID} --region ${AWS_REGION}
+```
 
-# Delete namespace
+Delete the monitoring namespace:
+
+```bash
 kubectl delete namespace monitoring
 ```
+
+---
+
+[← Previous: Set up S3 model storage](02-s3-model-storage.md) | [Back to main guide](README.md)

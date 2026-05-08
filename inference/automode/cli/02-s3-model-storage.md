@@ -190,22 +190,62 @@ kubectl delete pod s3-test
 
 > **Note:** If you plan to continue to the next section, skip the cleanup. Only run it when you are done with the S3 model storage.
 
-### Remove S3 Bucket and Pod Identity
+### Clean Up S3 Bucket and Pod Identity
+
+If you are starting from a new terminal, set the cluster name and region:
 
 ```bash
-# Delete the S3 model bucket
-aws s3 rb s3://${MODEL_BUCKET} --force
+export CLUSTER_NAME=eks-docs-inf
+export AWS_REGION=us-east-2
+```
 
-# Delete Pod Identity Association
+Look up the model bucket name:
+
+```bash
+MODEL_BUCKET=$(aws s3api list-buckets \
+  --query "Buckets[?starts_with(Name, '${CLUSTER_NAME}-models-')].Name | [0]" \
+  --output text)
+echo "Model bucket: ${MODEL_BUCKET}"
+```
+
+Look up the IAM policy ARN:
+
+```bash
+POLICY_ARN=$(aws iam list-policies \
+  --scope Local \
+  --query "Policies[?PolicyName=='${CLUSTER_NAME}-model-storage-policy'].Arn" \
+  --output text)
+echo "Policy ARN: ${POLICY_ARN}"
+```
+
+Delete the S3 model bucket (including all objects):
+
+```bash
+aws s3 rb s3://${MODEL_BUCKET} --force
+```
+
+Delete the Pod Identity association for the S3 service account:
+
+```bash
 eksctl delete podidentityassociation \
   --cluster ${CLUSTER_NAME} \
   --namespace default \
   --service-account-name model-storage-sa \
   --region ${AWS_REGION}
+```
 
-# Delete IAM policy
+Delete the IAM policy used for S3 access:
+
+```bash
 aws iam delete-policy --policy-arn ${POLICY_ARN}
+```
 
-# Delete ServiceAccount
+Delete the Kubernetes ServiceAccount:
+
+```bash
 kubectl delete serviceaccount model-storage-sa
 ```
+
+---
+
+[← Previous: Set up cluster and nodes](01-cluster-and-nodes.md) | [Next: Set up monitoring →](03-monitoring.md)
