@@ -274,11 +274,11 @@ After logging in to Grafana, verify the metrics pipeline is working end-to-end:
 
 1. Navigate to **Connections > Data sources** and confirm "Amazon-Managed-Prometheus" is listed as the default datasource
 
-![Validate AMP datasource in Grafana](prometheus-ds-validate.png)
+![Validate AMP datasource in Grafana](images/prometheus-ds-validate.png)
 
 2. Navigate to **Drilldown > Metrics** and search for the `up` metric. You should see results from your cluster's scrape targets
 
-![Validate metrics in Grafana](prometheus-metrics-validate.png)
+![Validate metrics in Grafana](images/prometheus-metrics-validate.png)
 
 If `up` shows results, the full pipeline (cluster → Prometheus → AMP → Grafana) is working.
 
