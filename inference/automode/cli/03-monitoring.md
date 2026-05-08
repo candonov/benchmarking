@@ -120,6 +120,20 @@ eksctl create podidentityassociation \
   --region ${AWS_REGION}
 ```
 
+Verify both Pod Identity associations were created:
+
+```bash
+eksctl get podidentityassociation --cluster ${CLUSTER_NAME} --region ${AWS_REGION}
+```
+
+Expected output should include both `amp-iamproxy-ingest-service-account` and `grafana-sa` in the `monitoring` namespace:
+
+```
+ASSOCIATION ARN                                                                             NAMESPACE    SERVICE ACCOUNT NAME                   IAM ROLE ARN
+arn:aws:eks:us-east-2:123456789012:podidentityassociation/eks-docs-inf/a-xxxxxxxxxxxxxxxxx  monitoring   amp-iamproxy-ingest-service-account    arn:aws:iam::123456789012:role/eks-docs-inf-amp-ingest-role
+arn:aws:eks:us-east-2:123456789012:podidentityassociation/eks-docs-inf/a-yyyyyyyyyyyyyyyyy  monitoring   grafana-sa                             arn:aws:iam::123456789012:role/eks-docs-inf-grafana-role
+```
+
 ## Install kube-prometheus-stack
 
 Add the Helm repo:
@@ -256,7 +270,7 @@ Prometheus scrapes metrics from node-exporter and kube-state-metrics via Service
 
 ## Access Grafana
 
-Port-forward to access the Grafana dashboard:
+Open a separate terminal windown and port-forward to access the Grafana dashboard:
 
 ```bash
 kubectl port-forward svc/kube-prometheus-stack-grafana 3000:80 -n monitoring
@@ -399,15 +413,6 @@ Verify the DCGM exporter DaemonSet is deployed:
 kubectl get daemonset dcgm-exporter -n monitoring
 ```
 
-Expected output (with no GPU nodes running):
-
-```
-NAME            DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR                                        AGE
-dcgm-exporter   0         0         0       0            0           eks.amazonaws.com/instance-gpu-manufacturer=nvidia   2m
-```
-
-`DESIRED: 0` is expected when no GPU nodes are running. The DaemonSet will automatically schedule a DCGM exporter pod on each GPU node as it comes up.
-
 Expected output (with a GPU node running):
 
 ```
@@ -415,7 +420,15 @@ NAME            DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECT
 dcgm-exporter   1         1         1       1            1           eks.amazonaws.com/instance-gpu-manufacturer=nvidia   59s
 ```
 
-After a few minutes, GPU metrics will be available in Grafana. Navigate to **Drilldown > Metrics** and search for `DCGM_FI_DEV_GPU_UTIL` to see GPU utilization across your nodes.
+After a few minutes, GPU metrics will be available in Grafana.
+
+To validate DCGM metrics, navigate to **Drilldown > Metrics** and search for `DCGM_`. You should see all the DCGM metrics flowing from your GPU nodes.
+
+![Validate DCGM metrics in Grafana](images/dcgm-metrics-validation.png)
+
+To view the DCGM Dashboard, navigate to **Dashboards > GPU Monitoring > NVIDIA DCGM Exporter Dashboard**. The dashboard shows GPU temperature, power usage, memory utilization, SM clocks, and tensor core activity.
+
+![DCGM Dashboard in Grafana](images/dcgm-dashboard.png)
 
 ---
 
@@ -509,4 +522,4 @@ kubectl delete namespace monitoring
 
 ---
 
-[← Previous: Set up S3 model storage](02-s3-model-storage.md) | [Back to main guide](README.md)
+[← Previous: Cleanup S3 model storage](02-s3-model-storage.md#cleanup) | [Back to main guide](README.md)

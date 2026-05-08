@@ -248,4 +248,4 @@ kubectl delete serviceaccount model-storage-sa
 
 ---
 
-[← Previous: Set up cluster and nodes](01-cluster-and-nodes.md) | [Next: Set up monitoring →](03-monitoring.md)
+[← Previous: Cleanup Cluster and Nodes](01-cluster-and-nodes.md#cleanup) | [Next: Cleanup Monitoring →](03-monitoring.md#cleanup)

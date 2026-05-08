@@ -175,7 +175,7 @@ Expected output:
 
 ```
 NAME         READY   STATUS      RESTARTS   AGE
-nvidia-smi   0/1     Completed   0          71s
+nvidia-smi   0/1     Completed   0          67s
 ```
 
 The `STATUS: Completed` means the `nvidia-smi` command ran and exited. Check the pod logs to see the GPU detected by the node.
@@ -214,16 +214,17 @@ Expected output:
 Events:
   Type     Reason                  Age   From                   Message
   ----     ------                  ----  ----                   -------
-  Warning  FailedScheduling        67s   default-scheduler      0/2 nodes are available: 2 node(s) had untolerated taint(s). no new claims to deallocate, preemption: 0/2 nodes are available: 2 Preemption is not helpful for scheduling.
-  Normal   Nominated               67s   eks-auto-mode/compute  Pod should schedule on: nodeclaim/gpu-inf-dynamic-ggsvc
-  Normal   Scheduled               31s   default-scheduler      Successfully assigned default/nvidia-smi to i-01ea29a35bb334680
-  Normal   Pulling                 10s   kubelet                spec.containers{nvidia-smi}: Pulling image "public.ecr.aws/amazonlinux/amazonlinux:2023-minimal"
-  Normal   Pulled                  8s    kubelet                spec.containers{nvidia-smi}: Successfully pulled image "public.ecr.aws/amazonlinux/amazonlinux:2023-minimal" in 1.475s (1.475s including waiting). Image size: 37442365 bytes.
-  Normal   Created                 8s    kubelet                spec.containers{nvidia-smi}: Created container: nvidia-smi
-  Normal   Started                 8s    kubelet                spec.containers{nvidia-smi}: Started container nvidia-smi
+  Warning  FailedScheduling        60s   default-scheduler      0/2 nodes are available: 2 node(s) had untolerated taint(s). no new claims to deallocate, preemption: 0/2 nodes are available: 2 Preemption is not helpful for scheduling.
+  Normal   Nominated               59s   eks-auto-mode/compute  Pod should schedule on: nodeclaim/gpu-inf-dynamic-vxcnj
+  Normal   Scheduled               24s   default-scheduler      Successfully assigned default/nvidia-smi to i-0fb17a09bc4203164
+  Warning  FailedCreatePodSandBox  21s   kubelet                Failed to create pod sandbox: rpc error: code = Unknown desc = failed to setup network for sandbox "7f85e25b220c8fb245187758dbbbc8efb3d40f3e49e13054404880daf4c3b2f0": plugin type="aws-cni" name="aws-cni" failed (add): add cmd: failed to setup network policy
+  Normal   Pulling                  7s   kubelet                spec.containers{nvidia-smi}: Pulling image "public.ecr.aws/amazonlinux/amazonlinux:2023-minimal"
+  Normal   Pulled                   5s   kubelet                spec.containers{nvidia-smi}: Successfully pulled image "public.ecr.aws/amazonlinux/amazonlinux:2023-minimal" in 1.237s (1.237s including waiting). Image size: 37442701 bytes.
+  Normal   Created                  5s   kubelet                spec.containers{nvidia-smi}: Container created
+  Normal   Started                  5s   kubelet                spec.containers{nvidia-smi}: Container started
 ```
 
-These events show the pod scheduling sequence: the pod initially fails to schedule because no GPU nodes exist (`FailedScheduling`), Karpenter nominates a new NodeClaim (`Nominated`), the scheduler assigns the pod once the node is ready (`Scheduled`), and then the container image is pulled and started. EKS Auto Mode comes with [SOCI (Seekable OCI)](https://github.com/awslabs/soci-snapshotter) parallel pull installed and configured out of the box on G, P, and Trn instances. Notice because of SOCI parallel pull, the container image was pulled from ECR in under 2 seconds (1.475s).
+These events show the pod scheduling sequence: the pod initially fails to schedule because no GPU nodes exist (`FailedScheduling`), Karpenter nominates a new NodeClaim (`Nominated`), the scheduler assigns the pod once the node is ready (`Scheduled`), and then the container image is pulled and started. EKS Auto Mode comes with [SOCI (Seekable OCI)](https://github.com/awslabs/soci-snapshotter) parallel pull installed and configured out of the box on G, P, and Trn instances. Notice because of SOCI parallel pull, the container image was pulled from ECR in under 2 seconds (1.237s).
 
 A NodeClaim is a request Karpenter creates to provision a specific node. It shows the instance type, capacity type, AZ, and whether the node is ready.
 
@@ -617,4 +618,4 @@ eksctl delete cluster --name=$CLUSTER_NAME --region=$AWS_REGION
 
 ---
 
-[← Back to main guide](README.md) | [Next: Set up S3 model storage →](02-s3-model-storage.md)
+[← Back to main guide](README.md) | [Next: Cleanup S3 model storage →](02-s3-model-storage.md#cleanup)
