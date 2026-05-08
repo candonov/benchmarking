@@ -8,10 +8,19 @@ _Diagram 1: EKS Auto Mode cluster with a static ODCR-backed GPU node and a dynam
 
 ## Prerequisites
 
+- kubectl >= 1.34
+- AWS CLI >= 2.27
+- Helm >= 3.14
+- jq
 - eksctl >= 0.225.0
-- kubectl
-- AWS CLI
-- Helm
+
+Verify your eksctl version:
+
+```bash
+eksctl version
+```
+
+If you are on a version older than 0.225.0, follow the [eksctl installation guide](https://eksctl.io/installation/) to upgrade to the latest release.
 
 ## Create EKS Auto Mode Cluster
 
