@@ -420,3 +420,41 @@ After a few minutes, GPU metrics will be available in Grafana. Navigate to **Dri
 ---
 
 [← Previous: Set up S3 model storage](02-s3-model-storage.md) | [Back to main guide](README.md)
+
+---
+
+## Cleanup
+
+> **Note:** If you plan to keep using monitoring with the cluster, skip the cleanup. Only run it when you are done with monitoring.
+
+### Remove Monitoring
+
+```bash
+# Uninstall DCGM exporter
+helm uninstall dcgm-exporter -n monitoring
+
+# Uninstall kube-prometheus-stack
+helm uninstall kube-prometheus-stack -n monitoring
+
+# Delete Pod Identity Associations
+eksctl delete podidentityassociation \
+  --cluster ${CLUSTER_NAME} \
+  --namespace monitoring \
+  --service-account-name amp-iamproxy-ingest-service-account \
+  --region ${AWS_REGION}
+
+eksctl delete podidentityassociation \
+  --cluster ${CLUSTER_NAME} \
+  --namespace monitoring \
+  --service-account-name grafana-sa \
+  --region ${AWS_REGION}
+
+# Delete IAM policy
+aws iam delete-policy --policy-arn ${AMP_POLICY_ARN}
+
+# Delete AMP workspace
+aws amp delete-workspace --workspace-id ${AMP_WORKSPACE_ID} --region ${AWS_REGION}
+
+# Delete namespace
+kubectl delete namespace monitoring
+```

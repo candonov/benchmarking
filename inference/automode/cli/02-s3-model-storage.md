@@ -188,6 +188,8 @@ kubectl delete pod s3-test
 
 ## Cleanup
 
+> **Note:** If you plan to continue to the next section, skip the cleanup. Only run it when you are done with the S3 model storage.
+
 ### Remove S3 Bucket and Pod Identity
 
 ```bash
