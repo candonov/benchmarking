@@ -4,7 +4,7 @@ This section contains instructions to create an EKS Auto Mode cluster with GPU N
 
 ![Diagram 1: Inference Architecture with EKS Auto Mode](images/inference-arch-auto-mode.png)
 
-_Diagram 1: EKS Auto Mode cluster with a dynamic GPU NodePool that launches reserved capacity first and falls back to Spot or On-Demand for overflow._
+_Diagram 1: EKS Auto Mode cluster with a GPU NodeClass and NodePool that launches reserved capacity first and falls back to Spot or On-Demand for overflow._
 
 ## Prerequisites
 
