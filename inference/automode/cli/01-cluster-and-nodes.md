@@ -27,7 +27,8 @@ If you are on a version older than 0.225.0, follow the [eksctl installation guid
 Create an EKS cluster with Auto Mode enabled using eksctl:
 
 ```bash
-# NOTE: Keep this cluster name consistent throughout the guide. Do not modify.
+# NOTE: Keep this cluster name value consistent throughout the guide. Changing
+# it may cause subsequent commands to target the wrong cluster.
 export CLUSTER_NAME=eks-docs-inf
 export AWS_REGION=us-east-2
 ```
