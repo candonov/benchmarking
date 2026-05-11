@@ -522,7 +522,7 @@ kubectl delete deployment gpu-overflow-test
 
 ---
 
-[← Back to main guide](README.md) | [Next: Set up S3 model storage →](02-s3-model-storage.md)
+[← Back to main guide](README.md) | [Next: Set up monitoring →](02-monitoring.md)
 
 ---
 
@@ -597,4 +597,4 @@ eksctl delete cluster --name=$CLUSTER_NAME --region=$AWS_REGION
 
 ---
 
-[← Back to main guide](README.md) | [Next: Cleanup S3 model storage →](02-s3-model-storage.md#cleanup)
+[← Back to main guide](README.md) | [Next: Cleanup Monitoring →](02-monitoring.md#cleanup)

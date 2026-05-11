@@ -182,7 +182,7 @@ kubectl delete pod s3-test
 
 ---
 
-[← Previous: Set up cluster and nodes](01-cluster-and-nodes.md) | [Next: Set up monitoring →](03-monitoring.md)
+[← Previous: Set up monitoring](02-monitoring.md) | [Back to main guide](README.md)
 
 ---
 
@@ -248,4 +248,4 @@ kubectl delete serviceaccount model-storage-sa
 
 ---
 
-[← Previous: Cleanup Cluster and Nodes](01-cluster-and-nodes.md#cleanup) | [Next: Cleanup Monitoring →](03-monitoring.md#cleanup)
+[← Previous: Cleanup Monitoring](02-monitoring.md#cleanup) | [Back to main guide](README.md)

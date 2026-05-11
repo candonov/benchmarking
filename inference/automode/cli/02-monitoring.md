@@ -432,7 +432,7 @@ To view the DCGM Dashboard, navigate to **Dashboards > GPU Monitoring > NVIDIA D
 
 ---
 
-[← Previous: Set up S3 model storage](02-s3-model-storage.md) | [Back to main guide](README.md)
+[← Previous: Set up cluster and nodes](01-cluster-and-nodes.md) | [Next: Set up S3 model storage →](03-s3-model-storage.md)
 
 ---
 
@@ -522,4 +522,4 @@ kubectl delete namespace monitoring
 
 ---
 
-[← Previous: Cleanup S3 model storage](02-s3-model-storage.md#cleanup) | [Back to main guide](README.md)
+[← Previous: Cleanup Cluster and Nodes](01-cluster-and-nodes.md#cleanup) | [Next: Cleanup S3 model storage →](03-s3-model-storage.md#cleanup)
