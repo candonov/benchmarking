@@ -288,11 +288,11 @@ After logging in to Grafana, verify the metrics pipeline is working end-to-end:
 
 1. Navigate to **Connections > Data sources** and confirm "Amazon-Managed-Prometheus" is listed as the default datasource
 
-![Validate AMP datasource in Grafana](images/prometheus-ds-validate.png)
+![Validate AMP datasource in Grafana](../../../images/inference-prometheus-ds-validate.png)
 
 2. Navigate to **Drilldown > Metrics** and search for the `up` metric. You should see results from your cluster's scrape targets
 
-![Validate metrics in Grafana](images/prometheus-metrics-validate.png)
+![Validate metrics in Grafana](../../../images/inference-prometheus-metrics-validate.png)
 
 If `up` shows results, the full pipeline (cluster → Prometheus → AMP → Grafana) is working.
 
@@ -424,15 +424,15 @@ After a few minutes, GPU metrics will be available in Grafana.
 
 To validate DCGM metrics, navigate to **Drilldown > Metrics** and search for `DCGM_`. You should see all the DCGM metrics flowing from your GPU nodes.
 
-![Validate DCGM metrics in Grafana](images/dcgm-metrics-validation.png)
+![Validate DCGM metrics in Grafana](../../../images/inference-dcgm-metrics-validation.png)
 
 To view the DCGM Dashboard, navigate to **Dashboards > GPU Monitoring > NVIDIA DCGM Exporter Dashboard**. The dashboard shows GPU temperature, power usage, memory utilization, SM clocks, and tensor core activity.
 
-![DCGM Dashboard in Grafana](images/dcgm-dashboard.png)
+![DCGM Dashboard in Grafana](../../../images/inference-dcgm-dashboard.png)
 
 ---
 
-[← Previous: Set up cluster and nodes](01-cluster-and-nodes.md) | [Next: Set up S3 model storage →](03-s3-model-storage.md)
+[← Previous: Set up cluster and nodes](cluster-and-compute/automode.md) | [Next: Set up S3 model storage →](s3-model-loading.md)
 
 ---
 
@@ -522,4 +522,4 @@ kubectl delete namespace monitoring
 
 ---
 
-[← Previous: Cleanup Cluster and Nodes](01-cluster-and-nodes.md#cleanup) | [Next: Cleanup S3 model storage →](03-s3-model-storage.md#cleanup)
+[← Previous: Cleanup Cluster and Nodes](cluster-and-compute/automode.md#cleanup) | [Next: Cleanup S3 model storage →](s3-model-loading.md#cleanup)

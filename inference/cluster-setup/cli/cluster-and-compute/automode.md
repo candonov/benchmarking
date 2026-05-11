@@ -2,9 +2,9 @@
 
 This section contains instructions to create an EKS Auto Mode cluster with GPU NodePools optimized for inference workloads, as depicted in the following diagram:
 
-![Diagram 1: Inference Architecture with EKS Auto Mode](images/inference-arch-auto-mode.png)
+![Diagram 1: Inference Architecture with EKS Auto Mode](../../../../images/inference-arch-auto-mode.png)
 
-_Diagram 1: EKS Auto Mode cluster with a static ODCR-backed GPU node and a dynamic Spot/On-Demand overflow NodePool for inference workloads._
+_Diagram 1: EKS Auto Mode cluster with a GPU NodeClass and NodePool that launches reserved capacity first and falls back to Spot or On-Demand for overflow._
 
 ## Prerequisites
 
@@ -27,7 +27,8 @@ If you are on a version older than 0.225.0, follow the [eksctl installation guid
 Create an EKS cluster with Auto Mode enabled using eksctl:
 
 ```bash
-# NOTE: Keep this cluster name consistent throughout the guide. Do not modify.
+# NOTE: Keep this cluster name value consistent throughout the guide. Changing
+# it may cause subsequent commands to target the wrong cluster.
 export CLUSTER_NAME=eks-docs-inf
 export AWS_REGION=us-east-2
 ```
@@ -84,7 +85,7 @@ cat << 'EOF' | kubectl apply -f -
 apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
-  name: gpu-inf-dynamic
+  name: gpu-inf
 spec:
   template:
     metadata:
@@ -97,7 +98,6 @@ spec:
         name: default
       taints:
         - key: nvidia.com/gpu
-          value: Exists
           effect: NoSchedule
       requirements:
         - key: karpenter.sh/capacity-type
@@ -131,11 +131,11 @@ Expected output:
 ```
 NAME              NODECLASS   NODES   READY   AGE
 general-purpose   default     0       True    15m
-gpu-inf-dynamic   default     0       True    8s
+gpu-inf           default     0       True    8s
 system            default     2       True    15m
 ```
 
-The `gpu-inf-dynamic` NodePool starts with zero nodes. Karpenter will automatically provision a GPU node when a pod with matching tolerations and resource requests is scheduled.
+The `gpu-inf` NodePool starts with zero nodes. Karpenter will automatically provision a GPU node when a pod with matching tolerations and resource requests is scheduled.
 
 ### Test with a Sample Pod
 
@@ -215,7 +215,7 @@ Events:
   Type     Reason                  Age   From                   Message
   ----     ------                  ----  ----                   -------
   Warning  FailedScheduling        60s   default-scheduler      0/2 nodes are available: 2 node(s) had untolerated taint(s). no new claims to deallocate, preemption: 0/2 nodes are available: 2 Preemption is not helpful for scheduling.
-  Normal   Nominated               59s   eks-auto-mode/compute  Pod should schedule on: nodeclaim/gpu-inf-dynamic-vxcnj
+  Normal   Nominated               59s   eks-auto-mode/compute  Pod should schedule on: nodeclaim/gpu-inf-vxcnj
   Normal   Scheduled               24s   default-scheduler      Successfully assigned default/nvidia-smi to i-0fb17a09bc4203164
   Warning  FailedCreatePodSandBox  21s   kubelet                Failed to create pod sandbox: rpc error: code = Unknown desc = failed to setup network for sandbox "7f85e25b220c8fb245187758dbbbc8efb3d40f3e49e13054404880daf4c3b2f0": plugin type="aws-cni" name="aws-cni" failed (add): add cmd: failed to setup network policy
   Normal   Pulling                  7s   kubelet                spec.containers{nvidia-smi}: Pulling image "public.ecr.aws/amazonlinux/amazonlinux:2023-minimal"
@@ -236,7 +236,7 @@ Expected output:
 
 ```
 NAME                    TYPE          CAPACITY    ZONE         NODE                  READY   AGE
-gpu-inf-dynamic-xxxxx   g7e.2xlarge   spot        us-east-2b   i-0xxxxxxxxxxxx       True    2m
+gpu-inf-xxxxx           g7e.2xlarge   spot        us-east-2b   i-0xxxxxxxxxxxx       True    2m
 ```
 
 The NodeClaim shows that Karpenter picked a `g7e.2xlarge` Spot instance in `us-east-2b`. The instance type and AZ will vary based on what capacity is available at the time.
@@ -256,17 +256,17 @@ i-01xxxxxxxxxxxxxxx   Ready    <none>   56s     v1.34.4-eks-f69f56f   192.168.15
 
 The `OS-IMAGE` column shows `Bottlerocket (EKS Auto, Nvidia)`, which is the accelerated Bottlerocket AMI variant with pre-installed NVIDIA drivers and device plugins. EKS Auto Mode automatically selected this AMI because the pod requested a GPU resource, without requiring any additional AMI configuration or launch templates. Karpenter will automatically remove the node 30 seconds after no pod is running, so if the job completed but no node shows up, that is expected.
 
-Check the `gpu-inf-dynamic` NodePool to validate Karpenter provisioned the instance from it:
+Check the `gpu-inf` NodePool to validate Karpenter provisioned the instance from it:
 
 ```bash
-kubectl get nodepools gpu-inf-dynamic
+kubectl get nodepools gpu-inf
 ```
 
 Expected output:
 
 ```
 NAME              NODECLASS   NODES   READY   AGE
-gpu-inf-dynamic   default     1       True    5m
+gpu-inf           default     1       True    5m
 ```
 
 `NODES: 1` means Karpenter provisioned one node from this NodePool. If `NODES: 0`, either the pod hasn't triggered provisioning yet or the node was already removed after the job completed.
@@ -281,11 +281,11 @@ If you see `Unable to fulfill capacity due to your request configuration`, Karpe
 
 > **Note:** Spot instances launched by Karpenter will not appear in the EC2 Spot Requests console. Karpenter uses the EC2 `CreateFleet` API with `type: instant`, which provisions instances synchronously without creating a Spot Request object. The instances appear in the EC2 Instances console with a `spot` lifecycle.
 
-## Use Static On-Demand Capacity Reservation (ODCR) NodePool with Dynamic Overflow
+## Attach an On-Demand Capacity Reservation (ODCR)
 
-In this section we will create an On-Demand Capacity Reservation (ODCR) for one GPU instance and set up an additional static NodeClass and NodePool to utilize it. The static NodePool provisions the instance immediately, so the scheduler naturally places pods there first since it already exists. If the static node is full, additional pods go Pending and Karpenter provisions nodes from the dynamic `gpu-inf-dynamic` NodePool as overflow. We will add a soft node affinity (`preferredDuringSchedulingIgnoredDuringExecution`) with the `karpenter.sh/capacity-type: reserved` label to explicitly prefer the static node first, in case nodes from both the static and dynamic NodePools are running simultaneously.
+In this section we will create an On-Demand Capacity Reservation (ODCR) for one GPU instance, create a custom NodeClass that references the reservation, and update the existing NodePool to use it. Karpenter provisions nodes from reserved capacity first, and once that is consumed, it provisions from spot or on-demand based on pricing and availability.
 
-### Create the Capacity Reservation, NodeClass, and NodePool
+### Create the ODCR, NodeClass, and Update the NodePool
 
 ```bash
 CR_AZ="us-east-2a"
@@ -321,7 +321,7 @@ CAPACITY_RESERVATION_ID=$(aws ec2 describe-capacity-reservations \
 echo "Capacity Reservation ID: $CAPACITY_RESERVATION_ID"
 ```
 
-Capacity reservation bindings are configured at the NodeClass level, and the `default` NodeClass is immutable, so we need to create a custom NodeClass. Without an ODCR, you could use the `default` NodeClass directly with a static `replicas` NodePool.
+Capacity reservation bindings are configured at the NodeClass level via `capacityReservationSelectorTerms`. The `default` NodeClass in EKS Auto Mode is immutable, so we need to create a custom NodeClass to attach the reservation.
 
 Get the node role from the `default` NodeClass (the custom NodeClass needs the same role):
 
@@ -337,7 +337,7 @@ cat << EOF | kubectl apply -f -
 apiVersion: eks.amazonaws.com/v1
 kind: NodeClass
 metadata:
-  name: gpu-inf-static
+  name: gpu-inf
   labels:
     guide: eks-docs-inf
 spec:
@@ -359,28 +359,25 @@ The `subnetSelectorTerms` and `securityGroupSelectorTerms` use exact-match tag f
 Validate the NodeClass was created successfully:
 
 ```bash
-kubectl get nodeclass gpu-inf-static
+kubectl get nodeclass gpu-inf
 ```
 
 Expected output:
 
 ```
 NAME             ROLE                                                        READY   AGE
-gpu-inf-static   eksctl-eks-docs-inf-cluster-AutoModeNodeRole-CGzs3dk0r3KQ   True    15s
+gpu-inf          eksctl-eks-docs-inf-cluster-AutoModeNodeRole-CGzs3dk0r3KQ   True    15s
 ```
 
-Apply the static NodePool that uses the ODCR-backed NodeClass:
+Update the NodePool to reference the ODCR-backed NodeClass and include `reserved` as an allowed capacity type:
 
 ```bash
 cat << EOF | kubectl apply -f -
 apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
-  name: gpu-inf-static
-  labels:
-    guide: eks-docs-inf
+  name: gpu-inf
 spec:
-  replicas: 1
   template:
     metadata:
       labels:
@@ -389,23 +386,32 @@ spec:
       nodeClassRef:
         group: eks.amazonaws.com
         kind: NodeClass
-        name: gpu-inf-static
-      requirements:
-        - key: "node.kubernetes.io/instance-type"
-          operator: In
-          values: ["${INSTANCE_TYPE}"]  # Must match the Capacity Reservation instance type
-        - key: "karpenter.sh/capacity-type"
-          operator: In
-          values: ["reserved"]
+        name: gpu-inf
       taints:
-        - key: "nvidia.com/gpu"
+        - key: nvidia.com/gpu
           effect: NoSchedule
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot", "on-demand", "reserved"]
+        - key: eks.amazonaws.com/instance-category
+          operator: In
+          values: ["g"]
+        - key: eks.amazonaws.com/instance-generation
+          operator: Gt
+          values: ["4"]
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+  limits:
+    cpu: 100
+    memory: 100Gi
 EOF
 ```
 
-This NodePool provisions a node immediately using the capacity reservation. It uses `replicas: 1` to keep one node running at all times. Karpenter resolves the reservation's AZ, instance type, and platform from EC2 automatically, so you don't need to specify the AZ in the NodePool requirements. Setting `karpenter.sh/capacity-type: reserved` means Karpenter will only launch instances that match a Capacity Reservation defined in the NodeClass's `capacityReservationSelectorTerms`. If the reservation is full or doesn't exist, the NodeClaim will fail rather than falling back to regular on-demand.
+This NodePool remains dynamic (no `replicas` field), so Karpenter only provisions nodes when pending pods require them. By including `reserved` alongside `spot` and `on-demand` in `capacity-type`, Karpenter treats reserved capacity as the most cost-efficient option and launches it first whenever a matching ODCR exists in the NodeClass. Karpenter resolves the reservation's AZ, instance type, and platform from EC2 automatically, so you do not need to specify the AZ in the NodePool requirements. Once the reservation is full or no longer matches, Karpenter falls back to spot or on-demand for any additional pending pods.
 
-Validate the NodePool and node provisioning:
+Validate that the NodePool was updated:
 
 ```bash
 kubectl get nodepools
@@ -416,36 +422,15 @@ Expected output:
 ```
 NAME              NODECLASS        NODES   READY   AGE
 general-purpose   default          0       True    20m
-gpu-inf-dynamic   default          0       True    10m
-gpu-inf-static    gpu-inf-static   1       True    8s
+gpu-inf           gpu-inf          0       True    8s
 system            default          2       True    20m
 ```
 
-Wait a few seconds for the ODCR node to provision:
+The NodePool shows 0 nodes even though the NodeClass references a capacity reservation of 1. This is expected for a dynamic NodePool. Karpenter only provisions nodes when pending pods require them, and it will use the reservation first when it launches. If you want the reserved node to stay running continuously, Karpenter supports static capacity through the `replicas` field, and you can create an additional static capacity NodePool to keep the reserved node up at all times.
 
-```bash
-kubectl get nodes -o wide
-```
+### Validate Reserved Priority and Fallback
 
-Expected output should show the ODCR node with the Bottlerocket Nvidia AMI:
-
-```
-NAME                  STATUS   ROLES    AGE    VERSION               INTERNAL-IP       EXTERNAL-IP   OS-IMAGE                                                              KERNEL-VERSION   CONTAINER-RUNTIME
-i-0xxxxxxxxxxxxxxxx   Ready    <none>   40s    v1.34.4-eks-f69f56f   192.168.186.126   <none>        Bottlerocket (EKS Auto, Nvidia) 2026.4.23 (aws-k8s-1.34-nvidia)       6.12.79          containerd://2.1.6+bottlerocket
-```
-
-### How Scheduling Works Across Both NodePools
-
-Both NodePools use the same `nvidia.com/gpu` taint. A pod that tolerates this taint and requests GPUs can land on either:
-
-1. The ODCR node is already running → scheduler places the pod there first
-2. If the ODCR node is full, the pod goes Pending → Karpenter provisions a Spot/On-Demand node from the `gpu-inf-dynamic` NodePool
-
-To explicitly prefer the static node, add a soft node affinity to your pod spec using the `karpenter.sh/capacity-type: reserved` label that Karpenter automatically applies to nodes launched from a capacity reservation.
-
-### Test Overflow Scaling
-
-Deploy a 2-replica Deployment that requests 1 GPU per pod. Since the static ODCR node (g6e.xlarge) has only 1 GPU, the first pod fills it and the second pod triggers Karpenter to scale the dynamic NodePool:
+Deploy a 2-replica Deployment that requests 1 GPU per pod. The ODCR is for 1x `g6e.xlarge` (1 GPU), so the first pod triggers Karpenter to launch a reserved node. The second pod cannot fit on the reserved node and triggers Karpenter to launch another node from spot or on-demand capacity.
 
 ```bash
 cat << 'EOF' | kubectl apply -f -
@@ -470,15 +455,6 @@ spec:
         - key: nvidia.com/gpu
           operator: Exists
           effect: NoSchedule
-      affinity:
-        nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              preference:
-                matchExpressions:
-                  - key: karpenter.sh/capacity-type
-                    operator: In
-                    values: ["reserved"]
       containers:
         - name: nvidia-smi
           image: public.ecr.aws/amazonlinux/amazonlinux:2023-minimal
@@ -489,7 +465,7 @@ spec:
 EOF
 ```
 
-Unlike the earlier nvidia-smi test pod which ran and exited, this Deployment keeps the pods running (`sleep infinity`) so they hold the GPU and don't release the node. The `preferredDuringSchedulingIgnoredDuringExecution` affinity with `capacity-type: reserved` tells the scheduler to prefer the static node. The first pod lands on the static capacity ODCR node, and the second pod goes Pending because the static node's GPU is full, and Karpenter provisions a new node from the dynamic NodePool.
+Unlike the earlier nvidia-smi test pod which ran and exited, this Deployment keeps the pods running (`sleep infinity`) so they hold the GPU and do not release the node. Karpenter launches the first pod on a reserved capacity node. Since the reservation is for a single instance, Karpenter launches the second pod on a spot or on-demand instance from the same NodePool.
 
 Verify the pods scheduled on different nodes:
 
@@ -505,23 +481,38 @@ gpu-overflow-test-59b97944fb-lq56c   1/1     Running   0          2m42s   192.16
 gpu-overflow-test-59b97944fb-z4zcx   1/1     Running   0          2m42s   192.168.130.64    i-0521ecd1849fa0578   <none>           <none>
 ```
 
-Notice that the two pods are running, each on different node.
+Notice that the two pods are running, each on a different node.
 
-Check that a new node was provisioned from the dynamic NodePool:
+Check that two nodes are provisioned from the `gpu-inf` NodePool:
 
 ```bash
 kubectl get nodepools
 ```
 
-Expected output should show `gpu-inf-dynamic` now has 1 node:
+Expected output should show `gpu-inf` now has 2 nodes:
 
 ```
-NAME              NODECLASS        NODES   READY   AGE
-general-purpose   default          0       True    30m
-gpu-inf-dynamic   default          1       True    20m
-gpu-inf-static    gpu-inf-static   1       True    10m
-system            default          2       True    30m
+NAME              NODECLASS   NODES   READY   AGE
+general-purpose   default     0       True    45m
+gpu-inf           gpu-inf     2       True    4m
+system            default     2       True    45m
 ```
+
+Check the nodeclaims:
+
+```
+kubectl get nodeclaim
+```
+
+Expected output:
+
+```
+NAME            TYPE          CAPACITY    ZONE         NODE                  READY   AGE
+gpu-inf-shg5w   g6e.xlarge    reserved    us-east-2a   i-0ea91fdeef65b8cb6   True    2m2s
+gpu-inf-ssnqf   g7e.2xlarge   spot        us-east-2b   i-00ccf7ce65cf3f6ca   True    112s
+```
+
+Notice the reserved node launched first, followed by the spot node once the reservation was full.
 
 Clean up the test deployment:
 
@@ -531,7 +522,7 @@ kubectl delete deployment gpu-overflow-test
 
 ---
 
-[← Back to main guide](README.md) | [Next: Set up monitoring →](02-monitoring.md)
+[← Back to main guide](../README.md) | [Next: Set up monitoring →](../monitoring.md)
 
 ---
 
@@ -539,7 +530,9 @@ kubectl delete deployment gpu-overflow-test
 
 > **Note:** If you plan to continue with the next sections of this guide, skip the full cleanup. Only run it when you are done.
 
-### Clean Up GPU Pods
+### Cancel the Capacity Reservation
+
+> **Note:** If you want to take a break and not pay for the ODCR, you can run this subsection only. When you are ready to return, recreate the ODCR with the commands from the previous section. The new reservation will have a different ID, so you will also need to re-apply the NodeClass with the updated `capacityReservationSelectorTerms`.
 
 If you are starting from a new terminal, set the cluster name and region:
 
@@ -548,23 +541,19 @@ export CLUSTER_NAME=eks-docs-inf
 export AWS_REGION=us-east-2
 ```
 
-Verify no pods are requesting GPUs on the cluster:
-
-```bash
-kubectl get pods --all-namespaces -o json | jq -r \
-  '.items[] | select(.spec.containers[].resources.limits["nvidia.com/gpu"] != null) | "\(.metadata.namespace)/\(.metadata.name)"'
-```
-
-If any pods show up, delete them to release the GPU nodes:
+Delete the test deployment so the reserved node drains before you cancel the reservation:
 
 ```bash
 kubectl delete deployment gpu-overflow-test --ignore-not-found
 kubectl delete pod nvidia-smi --ignore-not-found
 ```
 
-### Clean Up Static NodePool and NodeClass
+Verify no pods are still requesting GPUs on the cluster:
 
-> **Note:** If you want to take a break and not pay for the ODCR, you can run this subsection only. When you are ready to return, recreate the ODCR, NodeClass, and NodePool with the commands above.
+```bash
+kubectl get pods --all-namespaces -o json | jq -r \
+  '.items[] | select(.spec.containers[].resources.limits["nvidia.com/gpu"] != null) | "\(.metadata.namespace)/\(.metadata.name)"'
+```
 
 Look up the Capacity Reservation ID by instance type:
 
@@ -578,36 +567,26 @@ CAPACITY_RESERVATION_ID=$(aws ec2 describe-capacity-reservations \
 echo "Capacity Reservation ID: ${CAPACITY_RESERVATION_ID}"
 ```
 
-Delete the ODCR NodePool (this drains and terminates the node):
-
-```bash
-kubectl delete nodepool gpu-inf-static
-```
-
-Wait for the NodeClaims to terminate:
-
-```bash
-sleep 60
-```
-
-Delete the ODCR NodeClass:
-
-```bash
-kubectl delete nodeclass gpu-inf-static
-```
-
 Cancel the Capacity Reservation:
 
 ```bash
 aws ec2 cancel-capacity-reservation --capacity-reservation-id ${CAPACITY_RESERVATION_ID}
 ```
 
-### Delete Cluster and Remaining Resources
+> **Note:** Cancelling an active reservation does not terminate any running instances launched from it. Those instances continue running and are billed at standard on-demand rates until they are terminated. Deleting the deployment first (as shown above) ensures the reserved node is gone before cancellation.
 
-Delete the dynamic NodePool:
+### Delete the Remaining Resources and the Cluster
+
+Delete the NodePool:
 
 ```bash
-kubectl delete nodepool gpu-inf-dynamic
+kubectl delete nodepool gpu-inf
+```
+
+Delete the NodeClass:
+
+```bash
+kubectl delete nodeclass gpu-inf
 ```
 
 Delete the cluster:
@@ -618,4 +597,4 @@ eksctl delete cluster --name=$CLUSTER_NAME --region=$AWS_REGION
 
 ---
 
-[← Back to main guide](README.md) | [Next: Cleanup Monitoring →](02-monitoring.md#cleanup)
+[← Back to main guide](../README.md) | [Next: Cleanup Monitoring →](../monitoring.md#cleanup)
