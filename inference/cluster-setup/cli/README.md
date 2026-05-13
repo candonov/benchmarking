@@ -15,8 +15,8 @@ cluster-setup/cli/
 
 ## Sections
 
-1. [**Set up cluster and compute**](cluster-and-compute/README.md) — choose between EKS Auto Mode (managed compute) or EKS with self-managed open source Karpenter, then create the cluster and a GPU NodePool that launches reserved capacity first and falls back to Spot or On-Demand.
-2. [**Set up monitoring**](monitoring.md) — install kube-prometheus-stack with Amazon Managed Prometheus remote-write and DCGM exporter for GPU metrics.
-3. [**Set up S3 model loading**](s3-model-loading.md) — create an S3 bucket for model weights and configure Pod Identity so pods can read from it directly using the AWS SDK or CLI.
+1. [**Set up cluster and compute**](cluster-and-compute/README.md). Choose between EKS Auto Mode (managed compute) or EKS with self-managed open source Karpenter, then create the cluster and a GPU NodePool that launches reserved capacity first and falls back to Spot or On-Demand.
+2. [**Set up monitoring**](monitoring.md). Install kube-prometheus-stack with Amazon Managed Prometheus remote-write and DCGM exporter for GPU metrics.
+3. [**Set up S3 model loading**](s3-model-loading.md). Create an S3 bucket for model weights and configure Pod Identity so pods can read from it directly using the AWS SDK or CLI.
 
 Each section includes a **Cleanup** subsection you can run independently when you are done with that part of the guide.
